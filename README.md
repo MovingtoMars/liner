@@ -15,7 +15,7 @@ fn main() {
     loop {
         let res = con.read_line("[prompt]$ ", &mut |_| {}).unwrap();
 
-        if res.len() == 0 {
+        if res.is_empty() {
             break;
         }
 

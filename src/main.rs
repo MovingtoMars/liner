@@ -34,7 +34,7 @@ fn main() {
             })
             .unwrap();
 
-        if res.len() == 0 {
+        if res.is_empty() {
             break;
         }
         con.history.push(res.into());
