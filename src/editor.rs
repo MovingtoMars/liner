@@ -188,13 +188,16 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
     fn handle_ctrl_key(&mut self, c: char) -> io::Result<()> {
         match c {
             'l' => self.clear(),
+            'a' => self.move_cursor_to_start_of_line(),
             'e' => self.move_cursor_to_end_of_line(),
             'b' => self.move_cursor_left(1),
             'f' => self.move_cursor_right(1),
             'd' => self.delete_after_cursor(),
             'p' => self.move_up(),
             'n' => self.move_down(),
+            'u' => self.delete_all_before_cursor(),
             'k' => self.delete_all_after_cursor(),
+            'w' => self.delete_word_before_cursor(true),
             'x' => {
                 try!(self.undo());
                 Ok(())
@@ -474,6 +477,14 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
             }
         }
         self.print_current_buffer(false)
+    }
+
+    /// Deletes every character preceding the cursor until the beggining of the line
+    pub fn delete_all_before_cursor(&mut self) -> io::Result<()> {
+	    while self.cursor > 0 {
+			self.delete_before_cursor();
+	    }
+	    self.print_current_buffer(false)
     }
 
     /// Deletes every character after the cursor until the end of the line.
