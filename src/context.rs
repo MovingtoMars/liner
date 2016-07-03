@@ -26,6 +26,8 @@ pub fn get_buffer_words(buf: &Buffer) -> Vec<(usize, usize)> {
                 word_start = Some(i);
             }
         }
+
+        just_had_backslash = false;
     }
 
     if let Some(start) = word_start {
