@@ -12,5 +12,5 @@ name = "liner_test"
 [dependencies]
 
 [dependencies.termion]
-git = "https://github.com/jackpot51/termion.git"
+git = "https://github.com/Ticki/termion.git"
 features = ["nightly"]
