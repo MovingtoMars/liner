@@ -1,8 +1,9 @@
 use super::*;
+use context;
 
 fn assert_cursor_pos(s: &str, cursor: usize, expected_pos: CursorPosition) {
     let buf = Buffer::from(s.to_owned());
-    let words = buf.words();
+    let words = context::get_buffer_words(&buf);
     let pos = CursorPosition::get(cursor, &words[..]);
     assert!(expected_pos == pos,
             format!("buffer: {:?}, cursor: {}, expected pos: {:?}, pos: {:?}",
