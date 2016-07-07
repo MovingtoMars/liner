@@ -481,9 +481,8 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
 
     /// Deletes every character preceding the cursor until the beggining of the line
     pub fn delete_all_before_cursor(&mut self) -> io::Result<()> {
-	    while self.cursor > 0 {
-			self.delete_before_cursor();
-	    }
+        cur_buf_mut!(self).remove(0, self.cursor);
+        self.cursor = 0;
 	    self.print_current_buffer(false)
     }
 
