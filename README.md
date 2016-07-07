@@ -2,6 +2,8 @@
 A Rust library offering readline-like functionality.
 
 ## Basic Usage
+Currently requires a nightly Rust compiler.
+
 See `src/main.rs` for a more advanced example.
 
 ```rust
