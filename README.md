@@ -1,6 +1,8 @@
 # liner
 A Rust library offering readline-like functionality.
 
+[CONTRIBUTING.md](/CONTRIBUTING.md)
+
 ## Basic Usage
 Currently requires a nightly Rust compiler.
 
