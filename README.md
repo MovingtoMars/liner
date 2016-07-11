@@ -3,6 +3,8 @@ A Rust library offering readline-like functionality.
 
 [CONTRIBUTING.md](/CONTRIBUTING.md)
 
+[![Build Status](https://travis-ci.org/MovingtoMars/liner.svg)](https://travis-ci.org/MovingtoMars/liner)
+
 ## Basic Usage
 Currently requires a nightly Rust compiler.
 
