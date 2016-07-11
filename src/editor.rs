@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 use termion::{self, Key, TermWrite};
+use unicode_width::*;
 
 use Context;
 use Buffer;
@@ -69,8 +70,8 @@ pub struct Editor<'a, W: TermWrite + Write> {
     // None if we're on the new buffer, else the index of history
     cur_history_loc: Option<usize>,
 
-    // The number of chars in the prompt.
-    prompt_len: usize,
+    // The width of the text in the prompt.
+    prompt_width: usize,
 
     // The line of the cursor relative to the prompt. 1-indexed.
     // So if the cursor is on the same line as the prompt, `term_cursor_line == 1`.
@@ -110,7 +111,7 @@ macro_rules! send_event {
 
 impl<'a, W: TermWrite + Write> Editor<'a, W> {
     pub fn new(out: W, prompt: String, context: &'a mut Context) -> io::Result<Self> {
-        let prompt_len = prompt.chars().count();
+        let prompt_width = util::remove_csi_codes(&prompt[..])[..].width();
 
         let mut ed = Editor {
             prompt: prompt,
@@ -120,7 +121,7 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
             cur_history_loc: None,
             context: context,
             show_completions_hint: false,
-            prompt_len: prompt_len,
+            prompt_width: prompt_width,
             term_cursor_line: 1,
         };
 
@@ -136,7 +137,7 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
     }
 
     pub fn set_prompt(&mut self, prompt: String) {
-        self.prompt_len = prompt.chars().count();
+        self.prompt_width = util::remove_csi_codes(&prompt[..])[..].width();
         self.prompt = prompt;
     }
 
@@ -479,11 +480,11 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
         self.print_current_buffer(false)
     }
 
-    /// Deletes every character preceding the cursor until the beggining of the line
+    /// Deletes every character preceding the cursor until the beginning of the line.
     pub fn delete_all_before_cursor(&mut self) -> io::Result<()> {
         cur_buf_mut!(self).remove(0, self.cursor);
         self.cursor = 0;
-	    self.print_current_buffer(false)
+        self.print_current_buffer(false)
     }
 
     /// Deletes every character after the cursor until the end of the line.
@@ -554,12 +555,12 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
     /// Deletes the displayed prompt and buffer, replacing them with the current prompt and buffer
     pub fn print_current_buffer(&mut self, move_cursor_to_end_of_line: bool) -> io::Result<()> {
         let buf = cur_buf!(self);
-        let buf_len = buf.num_chars();
-        let new_prompt_and_buffer_len = buf_len + self.prompt_len;
+        let buf_width = buf.width();
+        let new_prompt_and_buffer_width = buf_width + self.prompt_width;
 
         let (w, _) = try!(termion::terminal_size());
         let w = w as usize;
-        let new_num_lines = (new_prompt_and_buffer_len + w - 1) / w;
+        let new_num_lines = (new_prompt_and_buffer_width + w - 1) / w;
 
         // Move the term cursor to the same line as the prompt.
         if self.term_cursor_line > 1 {
@@ -572,15 +573,16 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
         try!(write!(self.out, "{}", self.prompt));
         try!(buf.print(&mut self.out));
 
+        let buf_num_chars = buf.num_chars();
         if move_cursor_to_end_of_line {
-            self.cursor = buf_len;
+            self.cursor = buf_num_chars;
         } else {
-            if buf_len < self.cursor {
-                self.cursor = buf_len;
+            if buf_num_chars < self.cursor {
+                self.cursor = buf_num_chars;
             }
         }
 
-        self.term_cursor_line = (self.prompt_len + self.cursor + w - 1) / w;
+        self.term_cursor_line = (self.prompt_width + buf.range_width(0, self.cursor) + w - 1) / w;
 
         if !move_cursor_to_end_of_line {
             // The term cursor is now on the bottom line. We may need to move the term cursor up
@@ -588,13 +590,13 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
             let cursor_line_diff = new_num_lines as isize - self.term_cursor_line as isize;
             if cursor_line_diff > 0 {
                 try!(self.out.csi(format!("{}A", cursor_line_diff).as_ref()));
-            } else if cursor_line_diff > 0 {
+            } else if cursor_line_diff < 0 {
                 unreachable!();
             }
 
             // Now that we are on the right line, we must move the term cursor left or right
             // to match the true cursor.
-            let cursor_col_diff = buf_len as isize - self.cursor as isize -
+            let cursor_col_diff = buf_width as isize - buf.range_width(0, self.cursor) as isize -
                                   cursor_line_diff * w as isize;
             if cursor_col_diff > 0 {
                 try!(self.out.move_cursor_left(cursor_col_diff as u32));

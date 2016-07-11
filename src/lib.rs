@@ -1,4 +1,5 @@
 extern crate termion;
+extern crate unicode_width;
 
 mod event;
 pub use event::*;
