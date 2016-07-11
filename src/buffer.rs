@@ -1,4 +1,5 @@
 use termion::TermWrite;
+use unicode_width::UnicodeWidthStr;
 use std::io::{self, Write};
 use std::iter::FromIterator;
 
@@ -128,6 +129,10 @@ impl Buffer {
         s.len()
     }
 
+    pub fn width(&self) -> usize {
+        self.range_width(0, self.num_chars())
+    }
+
     pub fn char_before(&self, cursor: usize) -> Option<char> {
         if cursor == 0 {
             None
@@ -167,6 +172,10 @@ impl Buffer {
 
     pub fn range_chars(&self, start: usize, end: usize) -> Vec<char> {
         self.data[start..end].iter().cloned().collect()
+    }
+
+    pub fn range_width(&self, start: usize, end: usize) -> usize {
+        self.range(start, end)[..].width()
     }
 
     pub fn chars(&self) -> ::std::slice::Iter<char> {

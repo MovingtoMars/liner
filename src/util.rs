@@ -34,3 +34,14 @@ pub fn find_longest_common_prefix<T: Clone + Eq>(among: &[Vec<T>]) -> Option<Vec
 
     None
 }
+
+fn is_ascii_letter(c: char) -> bool {
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+pub fn remove_csi_codes(input: &str) -> String {
+    // XXX: better way to do this
+    input.split('\x1B')
+        .flat_map(|x| x.chars().skip_while(|&c| c != '?' && !is_ascii_letter(c)).skip(1))
+        .collect()
+}
