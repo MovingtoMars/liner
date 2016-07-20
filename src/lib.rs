@@ -1,3 +1,5 @@
+#![feature(deque_extras)]
+
 extern crate termion;
 extern crate unicode_width;
 
@@ -15,6 +17,9 @@ pub use context::*;
 
 mod buffer;
 pub use buffer::*;
+
+mod history;
+pub use history::*;
 
 mod util;
 

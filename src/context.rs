@@ -38,7 +38,7 @@ pub fn get_buffer_words(buf: &Buffer) -> Vec<(usize, usize)> {
 }
 
 pub struct Context {
-    pub history: Vec<Buffer>,
+    pub history: History,//Vec<Buffer>,
     pub completer: Option<Box<Completer>>,
     pub word_fn: Box<Fn(&Buffer) -> Vec<(usize, usize)>>,
 }
@@ -46,7 +46,7 @@ pub struct Context {
 impl Context {
     pub fn new() -> Self {
         Context {
-            history: vec![],
+            history: History::new(),
             completer: None,
             word_fn: Box::new(get_buffer_words),
         }
@@ -80,7 +80,7 @@ impl Context {
     }
 
     pub fn revert_all_history(&mut self) {
-        for buf in &mut self.history {
+        for buf in &mut self.history.history {
             buf.revert();
         }
     }
