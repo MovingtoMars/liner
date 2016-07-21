@@ -41,6 +41,10 @@ fn is_ascii_letter(c: char) -> bool {
 
 pub fn remove_csi_codes(input: &str) -> String {
     // XXX: better way to do this
+    if !input.contains('\x1B') {
+        return input.to_owned();
+    }
+
     input.split('\x1B')
         .flat_map(|x| x.chars().skip_while(|&c| c != '?' && !is_ascii_letter(c)).skip(1))
         .collect()
