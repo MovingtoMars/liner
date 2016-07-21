@@ -14,4 +14,4 @@ unicode-width = "0.1.*"
 
 [dependencies.termion]
 git = "https://github.com/Ticki/termion.git"
-features = ["nightly"]
+rev = "7a723b0ef53db242b95fd73739f8b18a4343e2bf"

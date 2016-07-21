@@ -564,7 +564,7 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
 
         // Move the term cursor to the same line as the prompt.
         if self.term_cursor_line > 1 {
-            try!(self.out.csi(format!("{}A", self.term_cursor_line - 1).as_ref()));
+            try!(self.out.move_cursor_up(self.term_cursor_line as u32 - 1));
         }
         // Move the cursor to the start of the line then clear everything after.
         try!(self.out.write_all(b"\r"));
@@ -589,7 +589,7 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
             // to the line where the true cursor is.
             let cursor_line_diff = new_num_lines as isize - self.term_cursor_line as isize;
             if cursor_line_diff > 0 {
-                try!(self.out.csi(format!("{}A", cursor_line_diff).as_ref()));
+                try!(self.out.move_cursor_up(cursor_line_diff as u32));
             } else if cursor_line_diff < 0 {
                 unreachable!();
             }
