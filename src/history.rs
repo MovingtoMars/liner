@@ -37,14 +37,16 @@ impl History {
     /// Add a command to the history buffer and remove the oldest commands when the max history
     /// size has been met. If writing to the disk is enabled, this function will be used for
     /// logging history to the designated history file.
-    pub fn push(&mut self, new_item: Buffer) {
+    pub fn push(&mut self, new_item: Buffer) -> io::Result<()> {
 
+        let mut ret = Ok(());
         self.file_name.as_ref().map(|name| {
-            self.write_to_disk(&new_item, name);
+            ret = self.write_to_disk(&new_item, name);
         });
 
         self.buffers.truncate(self.max_size-1); // Make room for the new item
-        self.buffers.push_front(new_item)
+        self.buffers.push_front(new_item);
+        ret
     }
 
     /// Set history file name. At the same time enable history.
@@ -60,8 +62,8 @@ impl History {
 
     /// Perform write operation. If the history file does not exist, it will be created.
     /// This function is not part of the public interface.
-    fn write_to_disk(&self, new_item: &Buffer, file_name: &String) {
-        match OpenOptions::new().read(true).write(true).create(true).open(file_name) {
+    fn write_to_disk(&self, new_item: &Buffer, file_name: &String) -> io::Result<()> {
+        let ret = match OpenOptions::new().read(true).write(true).create(true).open(file_name) {
             Ok(mut file) => {
                 // Determine the number of commands stored and the file length.
                 let (file_length, commands_stored) = {
@@ -94,40 +96,25 @@ impl History {
                         bytes as u64
                     };
 
-
-                    if let Err(message) = file.seek(SeekFrom::Start(seek_point)) {
-                        println!("ion: unable to seek in history file: {}", message);
-                    }
-
+                    try!(file.seek(SeekFrom::Start(seek_point)));
                     let mut buffer: Vec<u8> = Vec::with_capacity(file_length - seek_point as usize);
-                    if let Err(message) = file.read_to_end(&mut buffer) {
-                        println!("ion: unable to buffer history file: {}", message);
-                    }
+                    try!(file.read_to_end(&mut buffer));
+                    try!(file.set_len(0));
+                    try!(io::copy(&mut buffer.as_slice(), &mut file));
 
-                    if let Err(message) = file.set_len(0) {
-                        println!("ion: unable to truncate history file: {}", message);
-                    }
-
-                    if let Err(message) = io::copy(&mut buffer.as_slice(), &mut file) {
-                        println!("ion: unable to write to history file: {}", message);
-                    }
                 }
 
                 // Seek to end for appending
-                if let Err(message) = file.seek(SeekFrom::End(0)) {
-                    println!("ion: unable to seek in history file: {}", message);
-                }
-
+                try!(file.seek(SeekFrom::End(0)));
                 // Write the command to the history file.
-                if let Err(message) = file.write_all(String::from(new_item.clone()).as_bytes()) {
-                    println!("ion: unable to write to history file: {}", message);
-                }
-                if let Err(message) = file.write(b"\n") {
-                    println!("ion: unable to write to history file: {}", message);
-                }
+                try!(file.write_all(String::from(new_item.clone()).as_bytes()));
+                try!(file.write(b"\n"));
+
+                Ok(())
             }
-            Err(message) => println!("ion: error opening file: {}", message)
-        }
+            Err(message) => Err(message)
+        };
+        ret
     }
 
 }
