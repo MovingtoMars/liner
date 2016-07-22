@@ -38,7 +38,7 @@ pub fn get_buffer_words(buf: &Buffer) -> Vec<(usize, usize)> {
 }
 
 pub struct Context {
-    pub history: History,//Vec<Buffer>,
+    pub history: History,
     pub completer: Option<Box<Completer>>,
     pub word_fn: Box<Fn(&Buffer) -> Vec<(usize, usize)>>,
 }
@@ -80,7 +80,7 @@ impl Context {
     }
 
     pub fn revert_all_history(&mut self) {
-        for buf in &mut self.history.history {
+        for buf in &mut self.history.buffers {
             buf.revert();
         }
     }

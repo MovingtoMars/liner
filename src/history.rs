@@ -8,8 +8,10 @@ use std::ops::IndexMut;
 
 /// Structure encapsulating command history
 pub struct History {
-    /// TODO: this should eventually be private
-    pub history:    VecDeque<Buffer>,
+    // TODO: this should eventually be private
+    /// Vector of buffers to store history in
+    pub buffers:    VecDeque<Buffer>,
+    // TODO: Do we need this here? Ion can take care of this.
     //pub previous_status: i32,
     enabled:        bool,
     file_name:      String,
@@ -21,7 +23,7 @@ impl History {
     /// Create new History structure.
     pub fn new() -> History {
         History {
-            history: VecDeque::with_capacity(1000),
+            buffers: VecDeque::with_capacity(1000),
             enabled: false,
             file_name: "".to_string(),
             max_size: 1000,
@@ -30,7 +32,7 @@ impl History {
 
     /// Number of items in history.
     pub fn len(&self) -> usize {
-        self.history.len()
+        self.buffers.len()
     }
 
     /// Add a command to the history buffer and remove the oldest commands when the max history
@@ -41,14 +43,15 @@ impl History {
             self.write_to_disk(&new_item);
         }
 
-        self.history.truncate(self.max_size-1); // Make room for the new item
-        self.history.push_front(new_item)
+        self.buffers.truncate(self.max_size-1); // Make room for the new item
+        self.buffers.push_front(new_item)
     }
 
     /// Set history file name. At the same time enable history.
     pub fn set_file_name(&mut self, name: String) {
         self.file_name = name;
         self.enabled = true;
+        // TODO: load history from this file
     }
 
     /// Set maximum number of items in history.
@@ -134,12 +137,12 @@ impl Index<usize> for History {
     type Output = Buffer;
 
     fn index(&self, index: usize) -> &Buffer {
-        &self.history[index]
+        &self.buffers[index]
     }
 }
 
 impl IndexMut<usize> for History {
     fn index_mut(&mut self, index: usize) -> &mut Buffer {
-        &mut self.history[index]
+        &mut self.buffers[index]
     }
 }
