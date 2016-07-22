@@ -169,7 +169,6 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
             Key::Up => try!(self.move_up()),
             Key::Down => try!(self.move_down()),
             Key::Backspace => try!(self.delete_before_cursor()),
-            Key::Invalid => {}
             Key::Null => {}
             _ => {}
         }
