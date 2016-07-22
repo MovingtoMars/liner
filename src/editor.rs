@@ -111,7 +111,7 @@ macro_rules! send_event {
 
 impl<'a, W: TermWrite + Write> Editor<'a, W> {
     pub fn new(out: W, prompt: String, context: &'a mut Context) -> io::Result<Self> {
-        let prompt_width = util::remove_csi_codes(&prompt[..])[..].width();
+        let prompt_width = util::remove_codes(&prompt[..]).width();
 
         let mut ed = Editor {
             prompt: prompt,
@@ -137,7 +137,7 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
     }
 
     pub fn set_prompt(&mut self, prompt: String) {
-        self.prompt_width = util::remove_csi_codes(&prompt[..])[..].width();
+        self.prompt_width = util::remove_codes(&prompt[..]).width();
         self.prompt = prompt;
     }
 

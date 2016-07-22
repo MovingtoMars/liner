@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 pub fn find_longest_common_prefix<T: Clone + Eq>(among: &[Vec<T>]) -> Option<Vec<T>> {
     if among.len() == 0 {
         return None;
@@ -39,13 +41,21 @@ fn is_ascii_letter(c: char) -> bool {
     (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
-pub fn remove_csi_codes(input: &str) -> String {
-    // XXX: better way to do this
-    if !input.contains('\x1B') {
-        return input.to_owned();
+fn can_finish_code(c: char) -> bool {
+    if c == 'P' {
+        // dsc code
+        return false;
     }
 
-    input.split('\x1B')
-        .flat_map(|x| x.chars().skip_while(|&c| c != '?' && !is_ascii_letter(c)).skip(1))
-        .collect()
+    c == '?' || is_ascii_letter(c)
+}
+
+pub fn remove_codes(input: &str) -> Cow<str> {
+    if input.contains('\x1B') {
+        Cow::Owned(input.split('\x1B')
+            .flat_map(|x| x.chars().skip_while(|&c| !can_finish_code(c)).skip(1))
+            .collect())
+    } else {
+        Cow::Borrowed(input)
+    }
 }
