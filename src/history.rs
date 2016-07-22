@@ -13,8 +13,8 @@ pub struct History {
     pub buffers:    VecDeque<Buffer>,
     // TODO: Do we need this here? Ion can take care of this.
     //pub previous_status: i32,
-    enabled:        bool,
-    file_name:      String,
+    /// Store a filename to save history into; if None don't save history
+    file_name:      Option<String>,
     max_size:       usize,
 }
 
@@ -24,8 +24,7 @@ impl History {
     pub fn new() -> History {
         History {
             buffers: VecDeque::with_capacity(1000),
-            enabled: false,
-            file_name: "".to_string(),
+            file_name: None,
             max_size: 1000,
         }
     }
@@ -36,12 +35,13 @@ impl History {
     }
 
     /// Add a command to the history buffer and remove the oldest commands when the max history
-    /// size has been met.
+    /// size has been met. If writing to the disk is enabled, this function will be used for
+    /// logging history to the designated history file.
     pub fn push(&mut self, new_item: Buffer) {
 
-        if self.enabled == true {
-            self.write_to_disk(&new_item);
-        }
+        self.file_name.as_ref().map(|name| {
+            self.write_to_disk(&new_item, name);
+        });
 
         self.buffers.truncate(self.max_size-1); // Make room for the new item
         self.buffers.push_front(new_item)
@@ -49,8 +49,7 @@ impl History {
 
     /// Set history file name. At the same time enable history.
     pub fn set_file_name(&mut self, name: String) {
-        self.file_name = name;
-        self.enabled = true;
+        self.file_name = Some(name);
         // TODO: load history from this file
     }
 
@@ -59,16 +58,16 @@ impl History {
         self.max_size = size;
     }
 
-    /// If writing to the disk is enabled, this function will be used for logging history to the
-    /// designated history file. If the history file does not exist, it will be created.
-    fn write_to_disk(&self, new_item: &Buffer) {
-        match OpenOptions::new().read(true).write(true).create(true).open(&self.file_name) {
+    /// Perform write operation. If the history file does not exist, it will be created.
+    /// This function is not part of the public interface.
+    fn write_to_disk(&self, new_item: &Buffer, file_name: &String) {
+        match OpenOptions::new().read(true).write(true).create(true).open(file_name) {
             Ok(mut file) => {
                 // Determine the number of commands stored and the file length.
                 let (file_length, commands_stored) = {
                     let mut commands_stored = 0;
                     let mut file_length = 0;
-                    let file = File::open(&self.file_name).unwrap();
+                    let file = File::open(file_name).unwrap();
                     for byte in file.bytes() {
                         if byte.unwrap_or(b' ') == b'\n' { commands_stored += 1; }
                         file_length += 1;
@@ -86,7 +85,7 @@ impl History {
                         let commands_to_delete = commands_stored - self.max_size + 1;
                         let mut matched = 0;
                         let mut bytes = 0;
-                        let file = File::open(&self.file_name).unwrap();
+                        let file = File::open(file_name).unwrap();
                         for byte in file.bytes() {
                             if byte.unwrap_or(b' ') == b'\n' { matched += 1; }
                             bytes += 1;
