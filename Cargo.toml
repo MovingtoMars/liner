@@ -10,8 +10,5 @@ name = "liner"
 name = "liner_test"
 
 [dependencies]
+termion = "1.0"
 unicode-width = "0.1.*"
-
-[dependencies.termion]
-git = "https://github.com/Ticki/termion.git"
-rev = "fb1d702b13b35f8b0fbfebedfc1cd8442d54da7f"

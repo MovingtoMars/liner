@@ -1,4 +1,3 @@
-use termion::TermWrite;
 use unicode_width::UnicodeWidthStr;
 use std::io::{self, Write};
 use std::iter::FromIterator;
@@ -187,7 +186,7 @@ impl Buffer {
     }
 
     pub fn print<W>(&self, out: &mut W) -> io::Result<()>
-        where W: TermWrite + Write
+        where W: Write
     {
         let string: String = self.data.iter().cloned().collect();
         try!(out.write(string.as_bytes()));
