@@ -1,5 +1,3 @@
-#![feature(deque_extras)]
-
 extern crate termion;
 extern crate unicode_width;
 
