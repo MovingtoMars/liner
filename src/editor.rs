@@ -372,7 +372,7 @@ impl<'a, W: Write> Editor<'a, W> {
 
     /// Clears the screen then prints the prompt and current buffer.
     pub fn clear(&mut self) -> io::Result<()> {
-        try!(write!(self.out, "{}{}", clear::All, cursor::Goto(0, 0)));
+        try!(write!(self.out, "{}{}", clear::All, cursor::Goto(1, 1)));
         self.term_cursor_line = 1;
         self.print_current_buffer(false)
     }
