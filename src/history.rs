@@ -1,6 +1,7 @@
 use super::*;
 
 use std::collections::VecDeque;
+use std::io::{BufReader, BufRead, Error, ErrorKind};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::ops::Index;
@@ -60,9 +61,9 @@ impl History {
     }
 
     /// Set history file name. At the same time enable history.
-    pub fn set_file_name(&mut self, name: String) {
+    pub fn set_file_name(&mut self, name: String) -> io::Result<()> {
         self.file_name = Some(name);
-        // TODO: load history from this file
+        self.read_history_from_file()
     }
 
     /// Set maximal number of buffers stored in memory
@@ -73,6 +74,22 @@ impl History {
     /// Set maximal number of entries in history file
     pub fn set_max_file_size(&mut self, size: usize) {
         self.max_file_size = size;
+    }
+
+    fn read_history_from_file(&mut self) -> io::Result<()> {
+        let file_name = match self.file_name.clone() {
+            Some(name) => name,
+            None => return Err(Error::new(ErrorKind::Other, "Liner: internal error")),
+        };
+        let file = try!(OpenOptions::new().read(true).open(file_name));
+        let reader = BufReader::new(file);
+        for line in reader.lines() {
+            match line {
+                Ok(line) => self.buffers.push_back(Buffer::from(line)),
+                Err(_) => break,
+            }
+        }
+        Ok(())
     }
 
     /// Perform write operation. If the history file does not exist, it will be created.
