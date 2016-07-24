@@ -2,12 +2,30 @@ extern crate liner;
 extern crate termion;
 
 use std::mem::replace;
-use std::env::current_dir;
+use std::env::{args, current_dir};
 
 use liner::{Context, CursorPosition, Event, EventKind, FilenameCompleter};
 
 fn main() {
     let mut con = Context::new();
+
+    println!("Printing args...");
+
+    for argument in args() {
+        println!("{}", argument);
+    }
+
+    let file_name;
+    match args().nth(1) {
+        Some(str) => file_name = str,
+        None => {
+            println!("You have to provide file name");
+            return;
+        }
+    }
+    println!("History file: {}", file_name);
+    con.history.set_file_name(file_name);
+    con.history.load_history();
 
     loop {
         let res = con.read_line("[prompt]$ ",

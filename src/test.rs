@@ -1,6 +1,10 @@
 use super::*;
 use context;
 
+use std::env;
+use std::fs;
+use std::io::{BufReader, BufRead, Write};
+
 fn assert_cursor_pos(s: &str, cursor: usize, expected_pos: CursorPosition) {
     let buf = Buffer::from(s.to_owned());
     let words = context::get_buffer_words(&buf);
@@ -53,4 +57,76 @@ fn test_buffer_actions() {
                                 start: 1,
                                 text: ".".chars().collect(),
                             }]);
+}
+
+#[test]
+fn test_history_indexing() {
+    let mut h = History::new();
+    h.push(Buffer::from("a")).unwrap();
+    h.push(Buffer::from("b")).unwrap();
+    h.push(Buffer::from("c")).unwrap();
+    assert_eq!(h.len(), 3);
+    assert_eq!(String::from(h.buffers[0].clone()), "a".to_string());
+    assert_eq!(String::from(h.buffers[1].clone()), "b".to_string());
+    assert_eq!(String::from(h.buffers[2].clone()), "c".to_string());
+}
+
+#[test]
+fn test_in_memory_history_truncating() {
+    let mut h = History::new();
+    h.set_max_size(2);
+    for _ in 0..4 {
+        h.push(Buffer::from("a")).unwrap();
+    }
+    assert_eq!(h.len(), 2);
+}
+
+#[test]
+fn test_in_file_history_truncating() {
+    let mut tmp_file = env::temp_dir();
+    tmp_file.push("liner_test_file123.txt");
+
+    {
+        let mut h = History::new();
+        h.set_file_name(String::from(tmp_file.to_string_lossy().into_owned()));
+        h.set_max_file_size(5);
+        for _ in 0..20 {
+            h.push(Buffer::from("a")).unwrap();
+        }
+    }
+
+    let f = fs::File::open(tmp_file.clone()).unwrap();
+    let r = BufReader::new(f);
+    let count = r.lines().count();
+    assert_eq!(count, 5);
+
+    fs::remove_file(tmp_file).unwrap();
+}
+
+static TEXT: &'static str = "a
+b
+c
+d
+";
+
+#[test]
+fn test_reading_from_file() {
+    let mut tmp_file = env::temp_dir();
+    tmp_file.push("liner_test_file456.txt");
+    {
+        let mut f = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(tmp_file.clone())
+            .unwrap();
+        f.write_all(TEXT.as_bytes()).unwrap();
+    }
+    let mut h = History::new();
+    h.set_file_name(String::from(tmp_file.to_string_lossy().into_owned()));
+    let _ = h.load_history();
+    assert_eq!(String::from(h.buffers[0].clone()), "a".to_string());
+    assert_eq!(String::from(h.buffers[1].clone()), "b".to_string());
+    assert_eq!(String::from(h.buffers[2].clone()), "c".to_string());
+    assert_eq!(String::from(h.buffers[3].clone()), "d".to_string());
 }
