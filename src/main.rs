@@ -9,23 +9,16 @@ use liner::{Context, CursorPosition, Event, EventKind, FilenameCompleter};
 fn main() {
     let mut con = Context::new();
 
-    println!("Printing args...");
-
-    for argument in args() {
-        println!("{}", argument);
+    let history_file = args().nth(1);
+    match history_file {
+        Some(ref file_name) => println!("History file: {}", file_name),
+        None => println!("No history file"),
     }
 
-    let file_name;
-    match args().nth(1) {
-        Some(str) => file_name = str,
-        None => {
-            println!("You have to provide file name");
-            return;
-        }
+    con.history.set_file_name(history_file);
+    if con.history.file_name().is_some() {
+        con.history.load_history().unwrap();
     }
-    println!("History file: {}", file_name);
-    con.history.set_file_name(file_name);
-    con.history.load_history();
 
     loop {
         let res = con.read_line("[prompt]$ ",
@@ -55,6 +48,6 @@ fn main() {
         if res.is_empty() {
             break;
         }
-        con.history.push(res.into());
+        con.history.push(res.into()).unwrap();
     }
 }

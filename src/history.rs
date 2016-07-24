@@ -59,9 +59,17 @@ impl History {
         ret
     }
 
+    /// Get the history file name.
+    pub fn file_name(&self) -> Option<&str> {
+        match self.file_name {
+            Some(ref s) => Some(&s[..]),
+            None => None,
+        }
+    }
+
     /// Set history file name. At the same time enable history.
-    pub fn set_file_name(&mut self, name: String) {
-        self.file_name = Some(name);
+    pub fn set_file_name(&mut self, name: Option<String>) {
+        self.file_name = name;
     }
 
     /// Set maximal number of buffers stored in memory
