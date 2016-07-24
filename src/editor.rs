@@ -1,5 +1,6 @@
 use std::io::{self, Write};
-use termion::{self, Key, TermWrite};
+use termion::{self, clear, cursor};
+use termion::event::Key;
 use unicode_width::*;
 
 use Context;
@@ -54,7 +55,7 @@ impl CursorPosition {
     }
 }
 
-pub struct Editor<'a, W: TermWrite + Write> {
+pub struct Editor<'a, W: Write> {
     prompt: String,
     out: W,
     context: &'a mut Context,
@@ -109,7 +110,7 @@ macro_rules! send_event {
     }
 }
 
-impl<'a, W: TermWrite + Write> Editor<'a, W> {
+impl<'a, W: Write> Editor<'a, W> {
     pub fn new(out: W, prompt: String, context: &'a mut Context) -> io::Result<Self> {
         let prompt_width = util::remove_codes(&prompt[..]).width();
 
@@ -371,8 +372,7 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
 
     /// Clears the screen then prints the prompt and current buffer.
     pub fn clear(&mut self) -> io::Result<()> {
-        try!(self.out.clear());
-        try!(self.out.goto(0, 0));
+        try!(write!(self.out, "{}{}", clear::All, cursor::Goto(0, 0)));
         self.term_cursor_line = 1;
         self.print_current_buffer(false)
     }
@@ -563,13 +563,11 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
 
         // Move the term cursor to the same line as the prompt.
         if self.term_cursor_line > 1 {
-            try!(self.out.move_cursor_up(self.term_cursor_line as u32 - 1));
+            try!(write!(self.out, "{}", cursor::Up(self.term_cursor_line as u16 - 1)));
         }
-        // Move the cursor to the start of the line then clear everything after.
-        try!(self.out.write_all(b"\r"));
-        try!(self.out.clear_after());
+        // Move the cursor to the start of the line then clear everything after. Write the prompt
+        try!(write!(self.out, "\r{}{}", clear::AfterCursor, self.prompt));
 
-        try!(write!(self.out, "{}", self.prompt));
         try!(buf.print(&mut self.out));
 
         let buf_num_chars = buf.num_chars();
@@ -588,7 +586,7 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
             // to the line where the true cursor is.
             let cursor_line_diff = new_num_lines as isize - self.term_cursor_line as isize;
             if cursor_line_diff > 0 {
-                try!(self.out.move_cursor_up(cursor_line_diff as u32));
+                try!(write!(self.out, "{}", cursor::Up(cursor_line_diff as u16)));
             } else if cursor_line_diff < 0 {
                 unreachable!();
             }
@@ -598,9 +596,9 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
             let cursor_col_diff = buf_width as isize - buf.range_width(0, self.cursor) as isize -
                                   cursor_line_diff * w as isize;
             if cursor_col_diff > 0 {
-                try!(self.out.move_cursor_left(cursor_col_diff as u32));
+                try!(write!(self.out, "{}", cursor::Left(cursor_col_diff as u16)));
             } else if cursor_col_diff < 0 {
-                try!(self.out.move_cursor_right((-cursor_col_diff) as u32));
+                try!(write!(self.out, "{}", cursor::Right((-cursor_col_diff) as u16)));
             }
         }
 
@@ -608,7 +606,7 @@ impl<'a, W: TermWrite + Write> Editor<'a, W> {
     }
 }
 
-impl<'a, W: TermWrite + Write> From<Editor<'a, W>> for String {
+impl<'a, W: Write> From<Editor<'a, W>> for String {
     fn from(ed: Editor<'a, W>) -> String {
         match ed.cur_history_loc {
                 Some(i) => ed.context.history[i].clone(),

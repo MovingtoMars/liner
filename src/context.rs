@@ -1,5 +1,6 @@
 use std::io::{self, Stdout, stdout, stdin};
-use termion::{TermRead, IntoRawMode, RawTerminal};
+use termion::input::TermRead;
+use termion::raw::{IntoRawMode, RawTerminal};
 
 use super::*;
 
