@@ -88,7 +88,7 @@ fn test_in_file_history_truncating() {
 
     {
         let mut h = History::new();
-        h.set_file_name(String::from(tmp_file.to_string_lossy().into_owned()));
+        h.set_file_name(Some(String::from(tmp_file.to_string_lossy().into_owned())));
         h.set_max_file_size(5);
         for _ in 0..20 {
             h.push(Buffer::from("a")).unwrap();
@@ -123,7 +123,7 @@ fn test_reading_from_file() {
         f.write_all(TEXT.as_bytes()).unwrap();
     }
     let mut h = History::new();
-    h.set_file_name(String::from(tmp_file.to_string_lossy().into_owned()));
+    h.set_file_name(Some(String::from(tmp_file.to_string_lossy().into_owned())));
     let _ = h.load_history();
     assert_eq!(String::from(h.buffers[0].clone()), "a".to_string());
     assert_eq!(String::from(h.buffers[1].clone()), "b".to_string());
