@@ -2,6 +2,15 @@
 name = "liner"
 version = "0.1.0"
 authors = ["MovingtoMars <definitelynotliam@gmail.com>"]
+description = "A library offering readline-like functionality."
+repository = "https://github.com/MovingtoMars/liner"
+homepage = "https://github.com/MovingtoMars/liner"
+keywords = ["readline", "read", "line", "shell", "input", "editor", "completion"]
+license = "MIT"
+exclude = [
+    "CONTRIBUTING.md",
+    ".travis.yml",
+]
 
 [lib]
 name = "liner"
