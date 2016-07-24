@@ -25,6 +25,7 @@ fn main() {
     }
     println!("History file: {}", file_name);
     con.history.set_file_name(file_name);
+    con.history.load_history();
 
     loop {
         let res = con.read_line("[prompt]$ ",

@@ -61,9 +61,8 @@ impl History {
     }
 
     /// Set history file name. At the same time enable history.
-    pub fn set_file_name(&mut self, name: String) -> io::Result<()> {
+    pub fn set_file_name(&mut self, name: String) {
         self.file_name = Some(name);
-        self.read_history_from_file()
     }
 
     /// Set maximal number of buffers stored in memory
@@ -76,10 +75,11 @@ impl History {
         self.max_file_size = size;
     }
 
-    fn read_history_from_file(&mut self) -> io::Result<()> {
+    /// Load history from given file name
+    pub fn load_history(&mut self) -> io::Result<()> {
         let file_name = match self.file_name.clone() {
             Some(name) => name,
-            None => return Err(Error::new(ErrorKind::Other, "Liner: internal error")),
+            None => return Err(Error::new(ErrorKind::Other, "Liner: file name not specified")),
         };
         let file = try!(OpenOptions::new().read(true).open(file_name));
         let reader = BufReader::new(file);
