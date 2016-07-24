@@ -1,6 +1,7 @@
 use unicode_width::UnicodeWidthStr;
 use std::io::{self, Write};
 use std::iter::FromIterator;
+use std::fmt::{self, Write as FmtWrite};
 
 #[derive(Debug,Clone)]
 pub enum Action {
@@ -56,6 +57,15 @@ impl From<String> for Buffer {
 impl<'a> From<&'a str> for Buffer {
     fn from(s: &'a str) -> Self {
         Buffer::from_iter(s.chars())
+    }
+}
+
+impl fmt::Display for Buffer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for &c in &self.data {
+            try!(f.write_char(c));
+        }
+        Ok(())
     }
 }
 
