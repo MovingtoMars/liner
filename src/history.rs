@@ -6,6 +6,8 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::ops::Index;
 use std::ops::IndexMut;
 
+const DEFAULT_MAX_SIZE: usize = 1000;
+
 /// Structure encapsulating command history
 pub struct History {
     // TODO: this should eventually be private
@@ -15,7 +17,10 @@ pub struct History {
     //pub previous_status: i32,
     /// Store a filename to save history into; if None don't save history
     file_name:      Option<String>,
+    /// Maximal number of buffers stored in the memory
     max_size:       usize,
+    /// Maximal number of lines stored in the file
+    max_file_size:  usize,
 }
 
 impl History {
@@ -23,9 +28,10 @@ impl History {
     /// Create new History structure.
     pub fn new() -> History {
         History {
-            buffers: VecDeque::with_capacity(1000),
+            buffers: VecDeque::with_capacity(DEFAULT_MAX_SIZE),
             file_name: None,
-            max_size: 1000,
+            max_size: DEFAULT_MAX_SIZE,
+            max_file_size: DEFAULT_MAX_SIZE,
         }
     }
 
@@ -44,8 +50,12 @@ impl History {
             ret = self.write_to_disk(&new_item, name);
         });
 
-        self.buffers.truncate(self.max_size-1); // Make room for the new item
-        self.buffers.push_front(new_item);
+        // buffers[0] is the oldest entry
+        // the new entry goes to the end
+        self.buffers.push_back(new_item);
+        while self.buffers.len() > self.max_size {
+            self.buffers.pop_front();
+        }
         ret
     }
 
@@ -55,13 +65,19 @@ impl History {
         // TODO: load history from this file
     }
 
-    /// Set maximum number of items in history.
+    /// Set maximal number of buffers stored in memory
     pub fn set_max_size(&mut self, size: usize) {
         self.max_size = size;
     }
 
+    /// Set maximal number of entries in history file
+    pub fn set_max_file_size(&mut self, size: usize) {
+        self.max_file_size = size;
+    }
+
     /// Perform write operation. If the history file does not exist, it will be created.
     /// This function is not part of the public interface.
+    /// XXX: include more information in the file (like fish does)
     fn write_to_disk(&self, new_item: &Buffer, file_name: &String) -> io::Result<()> {
         let ret = match OpenOptions::new().read(true).write(true).create(true).open(file_name) {
             Ok(mut file) => {
@@ -82,9 +98,9 @@ impl History {
                 // discovered by counting the number of bytes until N newlines have been found and
                 // then the file will be seeked to that point, copying all data after and rewriting
                 // the file with the first N lines removed.
-                if commands_stored >= self.max_size {
+                if commands_stored >= self.max_file_size {
                     let seek_point = {
-                        let commands_to_delete = commands_stored - self.max_size + 1;
+                        let commands_to_delete = commands_stored - self.max_file_size + 1;
                         let mut matched = 0;
                         let mut bytes = 0;
                         let file = File::open(file_name).unwrap();
