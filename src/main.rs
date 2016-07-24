@@ -20,7 +20,7 @@ fn main() {
         Some(str) => file_name = str,
         None => {
             println!("You have to provide file name");
-            return
+            return;
         }
     }
     println!("History file: {}", file_name);

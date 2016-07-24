@@ -13,19 +13,18 @@ const DEFAULT_MAX_SIZE: usize = 1000;
 pub struct History {
     // TODO: this should eventually be private
     /// Vector of buffers to store history in
-    pub buffers:    VecDeque<Buffer>,
+    pub buffers: VecDeque<Buffer>,
     // TODO: Do we need this here? Ion can take care of this.
-    //pub previous_status: i32,
+    // pub previous_status: i32,
     /// Store a filename to save history into; if None don't save history
-    file_name:      Option<String>,
+    file_name: Option<String>,
     /// Maximal number of buffers stored in the memory
-    max_size:       usize,
+    max_size: usize,
     /// Maximal number of lines stored in the file
-    max_file_size:  usize,
+    max_file_size: usize,
 }
 
 impl History {
-
     /// Create new History structure.
     pub fn new() -> History {
         History {
@@ -104,7 +103,9 @@ impl History {
                     let mut file_length = 0;
                     let file = File::open(file_name).unwrap();
                     for byte in file.bytes() {
-                        if byte.unwrap_or(b' ') == b'\n' { commands_stored += 1; }
+                        if byte.unwrap_or(b' ') == b'\n' {
+                            commands_stored += 1;
+                        }
                         file_length += 1;
                     }
                     (file_length, commands_stored)
@@ -122,9 +123,13 @@ impl History {
                         let mut bytes = 0;
                         let file = File::open(file_name).unwrap();
                         for byte in file.bytes() {
-                            if byte.unwrap_or(b' ') == b'\n' { matched += 1; }
+                            if byte.unwrap_or(b' ') == b'\n' {
+                                matched += 1;
+                            }
                             bytes += 1;
-                            if matched == commands_to_delete { break }
+                            if matched == commands_to_delete {
+                                break;
+                            }
                         }
                         bytes as u64
                     };
@@ -145,11 +150,10 @@ impl History {
 
                 Ok(())
             }
-            Err(message) => Err(message)
+            Err(message) => Err(message),
         };
         ret
     }
-
 }
 
 impl Index<usize> for History {

@@ -103,8 +103,7 @@ fn test_in_file_history_truncating() {
     fs::remove_file(tmp_file).unwrap();
 }
 
-static TEXT: &'static str =
-"a
+static TEXT: &'static str = "a
 b
 c
 d
