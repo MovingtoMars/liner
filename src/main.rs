@@ -2,12 +2,23 @@ extern crate liner;
 extern crate termion;
 
 use std::mem::replace;
-use std::env::current_dir;
+use std::env::{args, current_dir};
 
 use liner::{Context, CursorPosition, Event, EventKind, FilenameCompleter};
 
 fn main() {
     let mut con = Context::new();
+
+    let history_file = args().nth(1);
+    match history_file {
+        Some(ref file_name) => println!("History file: {}", file_name),
+        None => println!("No history file"),
+    }
+
+    con.history.set_file_name(history_file);
+    if con.history.file_name().is_some() {
+        con.history.load_history().unwrap();
+    }
 
     loop {
         let res = con.read_line("[prompt]$ ",
@@ -37,6 +48,6 @@ fn main() {
         if res.is_empty() {
             break;
         }
-        con.history.push(res.into());
+        con.history.push(res.into()).unwrap();
     }
 }

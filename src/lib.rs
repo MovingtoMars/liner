@@ -16,6 +16,9 @@ pub use context::*;
 mod buffer;
 pub use buffer::*;
 
+mod history;
+pub use history::*;
+
 mod util;
 
 #[cfg(test)]

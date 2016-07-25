@@ -65,7 +65,8 @@ impl Completer for FilenameCompleter {
         let completing_dir;
         match full_path.parent() {
             // XXX non-unix separaor
-            Some(parent) if start != "" && !start_owned.ends_with("/") => {
+            Some(parent) if start != "" && !start_owned.ends_with("/") &&
+                            !full_path.ends_with("..") => {
                 p = PathBuf::from(parent);
                 start_name = full_path.file_name().unwrap().to_string_lossy().into_owned();
                 completing_dir = false;
@@ -73,7 +74,7 @@ impl Completer for FilenameCompleter {
             _ => {
                 p = full_path.clone();
                 start_name = "".into();
-                completing_dir = start == "" || start.ends_with("/");
+                completing_dir = start == "" || start.ends_with("/") || full_path.ends_with("..");
             }
         }
 

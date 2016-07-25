@@ -3,12 +3,18 @@ A Rust library offering readline-like functionality.
 
 [CONTRIBUTING.md](/CONTRIBUTING.md)
 
+[![](https://meritbadge.herokuapp.com/liner)](https://crates.io/crates/liner)
 [![Build Status](https://travis-ci.org/MovingtoMars/liner.svg)](https://travis-ci.org/MovingtoMars/liner)
 
 ## Basic Usage
-Currently requires a nightly Rust compiler.
+In `Cargo.toml`:
+```toml
+[dependencies]
+liner = "0.1.1"
+...
+```
 
-See `src/main.rs` for a more advanced example.
+In `src/main.rs`:
 
 ```rust
 extern crate liner;
