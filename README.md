@@ -12,7 +12,7 @@ Currently requires a nightly Rust compiler.
 In `Cargo.toml`:
 ```toml
 [dependencies]
-liner = "0.1.0"
+liner = "0.1.1"
 ...
 ```
 
