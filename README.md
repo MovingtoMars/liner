@@ -7,8 +7,6 @@ A Rust library offering readline-like functionality.
 [![Build Status](https://travis-ci.org/MovingtoMars/liner.svg)](https://travis-ci.org/MovingtoMars/liner)
 
 ## Basic Usage
-Currently requires a nightly Rust compiler.
-
 In `Cargo.toml`:
 ```toml
 [dependencies]
