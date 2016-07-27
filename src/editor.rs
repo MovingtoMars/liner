@@ -169,7 +169,10 @@ impl<'a, W: Write> Editor<'a, W> {
             Key::Right => try!(self.move_cursor_right(1)),
             Key::Up => try!(self.move_up()),
             Key::Down => try!(self.move_down()),
+            Key::Home => try!(self.move_cursor_to_start_of_line()),
+            Key::End => try!(self.move_cursor_to_end_of_line()),
             Key::Backspace => try!(self.delete_before_cursor()),
+            Key::Delete => try!(self.delete_after_cursor()),
             Key::Null => {}
             _ => {}
         }
