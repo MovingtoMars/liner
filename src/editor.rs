@@ -178,22 +178,20 @@ impl<'a, W: Write> Editor<'a, W> {
 
     pub fn handle_key_emacs(&mut self, key: Key) -> io::Result<()> {
         match key {
-            Key::Char(c) => try!(self.insert_after_cursor(c)),
-            Key::Alt(c) => try!(self.handle_alt_key(c)),
-            Key::Ctrl(c) => try!(self.handle_ctrl_key(c)),
-            Key::Left => try!(self.move_cursor_left(1)),
-            Key::Right => try!(self.move_cursor_right(1)),
-            Key::Up => try!(self.move_up()),
-            Key::Down => try!(self.move_down()),
-            Key::Home => try!(self.move_cursor_to_start_of_line()),
-            Key::End => try!(self.move_cursor_to_end_of_line()),
-            Key::Backspace => try!(self.delete_before_cursor()),
-            Key::Delete => try!(self.delete_after_cursor()),
-            Key::Null => {}
-            _ => {}
+            Key::Char(c) => self.insert_after_cursor(c),
+            Key::Alt(c) => self.handle_alt_key(c),
+            Key::Ctrl(c) => self.handle_ctrl_key(c),
+            Key::Left => self.move_cursor_left(1),
+            Key::Right => self.move_cursor_right(1),
+            Key::Up => self.move_up(),
+            Key::Down => self.move_down(),
+            Key::Home => self.move_cursor_to_start_of_line(),
+            Key::End => self.move_cursor_to_end_of_line(),
+            Key::Backspace => self.delete_before_cursor(),
+            Key::Delete => self.delete_after_cursor(),
+            Key::Null => Ok(()),
+            _ => Ok(()),
         }
-
-        Ok(())
     }
 
     fn handle_ctrl_key(&mut self, c: char) -> io::Result<()> {
