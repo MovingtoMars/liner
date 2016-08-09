@@ -156,12 +156,29 @@ impl<'a, W: Write> Editor<'a, W> {
         send_event!(handler, self, BeforeKey, key);
 
         match key {
+            Key::Char('\t') => try!(self.complete(handler)),
+            _ => {
+                done = try!(self.handle_key_emacs(key));
+                self.show_completions_hint = false;
+            }
+        }
+
+        send_event!(handler, self, AfterKey, key);
+
+        try!(self.out.flush());
+
+        Ok(done)
+    }
+
+    pub fn handle_key_emacs(&mut self, key: Key) -> io::Result<bool> {
+        let mut done = false;
+
+        match key {
             Key::Char('\n') => {
                 try!(self.print_current_buffer(true));
                 try!(self.out.write(b"\r\n"));
                 done = true;
             }
-            Key::Char('\t') => try!(self.complete(handler)),
             Key::Char(c) => try!(self.insert_after_cursor(c)),
             Key::Alt(c) => try!(self.handle_alt_key(c)),
             Key::Ctrl(c) => try!(self.handle_ctrl_key(c)),
@@ -176,15 +193,6 @@ impl<'a, W: Write> Editor<'a, W> {
             Key::Null => {}
             _ => {}
         }
-
-        match key {
-            Key::Char('\t') => {}
-            _ => self.show_completions_hint = false,
-        }
-
-        send_event!(handler, self, AfterKey, key);
-
-        try!(self.out.flush());
 
         Ok(done)
     }
