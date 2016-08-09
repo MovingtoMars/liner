@@ -176,11 +176,9 @@ impl<'a, W: Write> Editor<'a, W> {
         Ok(done)
     }
 
-    pub fn handle_key_emacs(&mut self, key: Key) -> io::Result<()> {
+    pub fn handle_key_common(&mut self, key: Key) -> io::Result<()> {
         match key {
-            Key::Char(c) => self.insert_after_cursor(c),
-            Key::Alt(c) => self.handle_alt_key(c),
-            Key::Ctrl(c) => self.handle_ctrl_key(c),
+            Key::Ctrl('l') => self.clear(),
             Key::Left => self.move_cursor_left(1),
             Key::Right => self.move_cursor_right(1),
             Key::Up => self.move_up(),
@@ -191,6 +189,15 @@ impl<'a, W: Write> Editor<'a, W> {
             Key::Delete => self.delete_after_cursor(),
             Key::Null => Ok(()),
             _ => Ok(()),
+        }
+    }
+
+    pub fn handle_key_emacs(&mut self, key: Key) -> io::Result<()> {
+        match key {
+            Key::Char(c) => self.insert_after_cursor(c),
+            Key::Alt(c) => self.handle_alt_key(c),
+            Key::Ctrl(c) => self.handle_ctrl_key(c),
+            _ => self.handle_key_common(key),
         }
     }
 
