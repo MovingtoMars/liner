@@ -157,8 +157,14 @@ impl<'a, W: Write> Editor<'a, W> {
 
         match key {
             Key::Char('\t') => try!(self.complete(handler)),
+            Key::Char('\n') => {
+                try!(self.print_current_buffer(true));
+                try!(self.out.write(b"\r\n"));
+                self.show_completions_hint = false;
+                done = true;
+            }
             _ => {
-                done = try!(self.handle_key_emacs(key));
+                try!(self.handle_key_emacs(key));
                 self.show_completions_hint = false;
             }
         }
@@ -170,15 +176,8 @@ impl<'a, W: Write> Editor<'a, W> {
         Ok(done)
     }
 
-    pub fn handle_key_emacs(&mut self, key: Key) -> io::Result<bool> {
-        let mut done = false;
-
+    pub fn handle_key_emacs(&mut self, key: Key) -> io::Result<()> {
         match key {
-            Key::Char('\n') => {
-                try!(self.print_current_buffer(true));
-                try!(self.out.write(b"\r\n"));
-                done = true;
-            }
             Key::Char(c) => try!(self.insert_after_cursor(c)),
             Key::Alt(c) => try!(self.handle_alt_key(c)),
             Key::Ctrl(c) => try!(self.handle_ctrl_key(c)),
@@ -194,7 +193,7 @@ impl<'a, W: Write> Editor<'a, W> {
             _ => {}
         }
 
-        Ok(done)
+        Ok(())
     }
 
     fn handle_ctrl_key(&mut self, c: char) -> io::Result<()> {
