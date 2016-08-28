@@ -658,4 +658,21 @@ mod tests {
         assert_eq!(ed.cursor, 3);
         assert_eq!(String::from(ed), "left");
     }
+
+    #[test]
+    fn cursor_movement() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("right").unwrap();
+        assert_eq!(ed.cursor, 5);
+
+        simulate_keys!(ed, [
+            Key::Left,
+            Key::Left,
+            Key::Right,
+        ]);
+
+        assert_eq!(ed.cursor, 4);
+    }
 }
