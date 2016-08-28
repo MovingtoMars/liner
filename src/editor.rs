@@ -643,6 +643,22 @@ mod tests {
     }
 
     #[test]
+    fn enter_is_done() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("done").unwrap();
+        assert_eq!(ed.cursor, 4);
+
+        assert!(simulate_keys!(ed, [
+            Key::Char('\n'),
+        ]));
+
+        assert_eq!(ed.cursor, 4);
+        assert_eq!(String::from(ed), "done");
+    }
+
+    #[test]
     fn move_cursor_left() {
         let mut context = Context::new();
         let out = Vec::new();
