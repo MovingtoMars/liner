@@ -562,7 +562,7 @@ impl<'a, W: Write> Editor<'a, W> {
 
         let (w, _) = try!(termion::terminal_size());
         let w = w as usize;
-        let new_num_lines = (new_prompt_and_buffer_width + w - 1) / w;
+        let new_num_lines = (new_prompt_and_buffer_width + w) / w;
 
         // Move the term cursor to the same line as the prompt.
         if self.term_cursor_line > 1 {
@@ -572,6 +572,10 @@ impl<'a, W: Write> Editor<'a, W> {
         try!(write!(self.out, "\r{}{}", clear::AfterCursor, self.prompt));
 
         try!(buf.print(&mut self.out));
+        if new_prompt_and_buffer_width % w == 0 {
+            // at the end of the line, move the cursor down a line
+            try!(write!(self.out, "\r\n"));
+        }
 
         let buf_num_chars = buf.num_chars();
         if move_cursor_to_end_of_line {
@@ -582,7 +586,7 @@ impl<'a, W: Write> Editor<'a, W> {
             }
         }
 
-        self.term_cursor_line = (self.prompt_width + buf.range_width(0, self.cursor) + w - 1) / w;
+        self.term_cursor_line = (self.prompt_width + buf.range_width(0, self.cursor) + w) / w;
 
         if !move_cursor_to_end_of_line {
             // The term cursor is now on the bottom line. We may need to move the term cursor up
