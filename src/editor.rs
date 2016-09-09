@@ -622,3 +622,73 @@ impl<'a, W: Write> From<Editor<'a, W>> for String {
             .into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use termion::event::Key;
+    use Context;
+
+    macro_rules! simulate_keys {
+        ($ed:ident, $keys:expr) => {{
+            let mut done = false;
+            for k in $keys.iter() {
+                if $ed.handle_key(*k, &mut |_| {}).unwrap() {
+                    done = true;
+                    break;
+                }
+            }
+            done
+        }}
+    }
+
+    #[test]
+    fn enter_is_done() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("done").unwrap();
+        assert_eq!(ed.cursor, 4);
+
+        assert!(simulate_keys!(ed, [
+            Key::Char('\n'),
+        ]));
+
+        assert_eq!(ed.cursor, 4);
+        assert_eq!(String::from(ed), "done");
+    }
+
+    #[test]
+    fn move_cursor_left() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("let").unwrap();
+        assert_eq!(ed.cursor, 3);
+
+        simulate_keys!(ed, [
+            Key::Left,
+            Key::Char('f'),
+        ]);
+
+        assert_eq!(ed.cursor, 3);
+        assert_eq!(String::from(ed), "left");
+    }
+
+    #[test]
+    fn cursor_movement() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("right").unwrap();
+        assert_eq!(ed.cursor, 5);
+
+        simulate_keys!(ed, [
+            Key::Left,
+            Key::Left,
+            Key::Right,
+        ]);
+
+        assert_eq!(ed.cursor, 4);
+    }
+}
