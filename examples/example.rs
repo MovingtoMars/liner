@@ -12,6 +12,6 @@ fn main() {
             break;
         }
 
-        con.history.push(res.into());
+        con.history.push(res.into()).unwrap();
     }
 }
