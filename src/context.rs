@@ -62,22 +62,27 @@ impl Context {
                                       mut handler: &mut EventHandler<RawTerminal<Stdout>>)
                                       -> io::Result<String> {
         let res = {
-            let stdin = stdin();
-
             let stdout = stdout().into_raw_mode().unwrap();
-            let mut ed = try!(Editor::new(stdout, prompt.into(), self));
-
-            for c in stdin.keys() {
-                if try!(ed.handle_key(c.unwrap(), handler)) {
-                    break;
-                }
-            }
-
-            Ok(ed.into())
+            let ed = try!(Editor::new(stdout, prompt.into(), self));
+            Self::handle_keys(ed, handler)
         };
 
         self.revert_all_history();
         res
+    }
+
+    fn handle_keys(mut ed: Editor<RawTerminal<Stdout>>,
+                   mut handler: &mut EventHandler<RawTerminal<Stdout>>)
+    -> io::Result<String>
+    {
+        let stdin = stdin();
+        for c in stdin.keys() {
+            if try!(ed.handle_key(c.unwrap(), handler)) {
+                break;
+            }
+        }
+
+        Ok(ed.into())
     }
 
     pub fn revert_all_history(&mut self) {
