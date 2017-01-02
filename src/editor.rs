@@ -647,6 +647,19 @@ mod tests {
     }
 
     #[test]
+    /// test undoing delete_all_after_cursor
+    fn delete_all_after_cursor_undo() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("delete all of this").unwrap();
+        ed.move_cursor_to_start_of_line().unwrap();
+        ed.delete_all_after_cursor().unwrap();
+        ed.undo().unwrap();
+        assert_eq!(String::from(ed), "delete all of this");
+    }
+
+    #[test]
     fn enter_is_done() {
         let mut context = Context::new();
         let out = Vec::new();
