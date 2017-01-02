@@ -3,6 +3,7 @@ use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 
 use super::*;
+use keymap;
 
 /// The default for `Context.word_fn`.
 pub fn get_buffer_words(buf: &Buffer) -> Vec<(usize, usize)> {
@@ -64,7 +65,7 @@ impl Context {
         let res = {
             let stdout = stdout().into_raw_mode().unwrap();
             let ed = try!(Editor::new(stdout, prompt.into(), self));
-            Self::handle_keys(ed, handler)
+            Self::handle_keys(keymap::Emacs::new(ed), handler)
         };
 
         self.revert_all_history();
