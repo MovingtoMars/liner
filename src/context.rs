@@ -1,4 +1,4 @@
-use std::io::{self, Stdout, stdout, stdin};
+use std::io::{self, Stdout, stdout, stdin, Write};
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 
@@ -71,18 +71,20 @@ impl Context {
         res
     }
 
-    fn handle_keys(mut ed: Editor<RawTerminal<Stdout>>,
-                   mut handler: &mut EventHandler<RawTerminal<Stdout>>)
+    fn handle_keys<'a, T, W: Write, M: KeyMap<'a, W, T>>(
+        mut keymap: M,
+        mut handler: &mut EventHandler<W>)
     -> io::Result<String>
+        where String: From<M>
     {
         let stdin = stdin();
         for c in stdin.keys() {
-            if try!(ed.handle_key(c.unwrap(), handler)) {
+            if try!(keymap.handle_key(c.unwrap(), handler)) {
                 break;
             }
         }
 
-        Ok(ed.into())
+        Ok(keymap.into())
     }
 
     pub fn revert_all_history(&mut self) {
