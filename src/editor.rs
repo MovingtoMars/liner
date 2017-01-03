@@ -7,7 +7,6 @@ use Context;
 use Buffer;
 use event::*;
 use util;
-use KeyMap;
 
 /// Represents the position of the cursor relative to words in the buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -637,16 +636,6 @@ impl<'a, W: Write> From<Editor<'a, W>> for String {
                 _ => ed.new_buf,
             }
             .into()
-    }
-}
-
-impl<'a, W: Write> KeyMap<'a, W, Editor<'a, W>> for Editor<'a, W> {
-    fn handle_key(&mut self, key: Key, handler: &mut EventHandler<W>) -> io::Result<bool> {
-        self.handle_key(key, handler)
-    }
-
-    fn editor(&mut self) ->  &mut Editor<'a, W> {
-        self
     }
 }
 
