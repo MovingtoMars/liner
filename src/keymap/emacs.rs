@@ -3,7 +3,6 @@ use termion::event::Key;
 
 use KeyMap;
 use Editor;
-use event::EventHandler;
 
 pub struct Emacs<'a, W: Write> {
     ed: Editor<'a, W>,
@@ -18,8 +17,8 @@ impl<'a, W: Write> Emacs<'a, W> {
 }
 
 impl<'a, W: Write> KeyMap<'a, W, Emacs<'a, W>> for Emacs<'a, W> {
-    fn handle_key(&mut self, key: Key, handler: &mut EventHandler<W>) -> io::Result<bool> {
-        self.ed.handle_key(key, handler)
+    fn handle_key_core(&mut self, key: Key) -> io::Result<()> {
+        self.ed.handle_key_emacs(key)
     }
 
     fn editor(&mut self) ->  &mut Editor<'a, W> {

@@ -150,30 +150,15 @@ impl<'a, W: Write> Editor<'a, W> {
         self.cursor
     }
 
-    pub fn handle_key(&mut self, key: Key, handler: &mut EventHandler<W>) -> io::Result<bool> {
-        let mut done = false;
+    pub fn handle_newline(&mut self) -> io::Result<()> {
+        try!(self.print_current_buffer(true));
+        try!(self.out.write(b"\r\n"));
+        self.show_completions_hint = false;
+        Ok(())
+    }
 
-        send_event!(handler, self, BeforeKey, key);
-
-        match key {
-            Key::Char('\t') => try!(self.complete(handler)),
-            Key::Char('\n') => {
-                try!(self.print_current_buffer(true));
-                try!(self.out.write(b"\r\n"));
-                self.show_completions_hint = false;
-                done = true;
-            }
-            _ => {
-                try!(self.handle_key_emacs(key));
-                self.show_completions_hint = false;
-            }
-        }
-
-        send_event!(handler, self, AfterKey, key);
-
-        try!(self.out.flush());
-
-        Ok(done)
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.out.flush()
     }
 
     pub fn handle_key_common(&mut self, key: Key) -> io::Result<()> {
@@ -287,7 +272,11 @@ impl<'a, W: Write> Editor<'a, W> {
         Ok(())
     }
 
-    fn complete(&mut self, handler: &mut EventHandler<W>) -> io::Result<()> {
+    pub fn skip_completions_hint(&mut self) {
+        self.show_completions_hint = false;
+    }
+
+    pub fn complete(&mut self, handler: &mut EventHandler<W>) -> io::Result<()> {
         send_event!(handler, self, BeforeComplete);
 
         let (word, completions) = {
