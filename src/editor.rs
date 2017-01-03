@@ -1,6 +1,5 @@
 use std::io::{self, Write};
 use termion::{self, clear, cursor};
-use termion::event::Key;
 use unicode_width::*;
 
 use Context;
@@ -159,65 +158,6 @@ impl<'a, W: Write> Editor<'a, W> {
 
     pub fn flush(&mut self) -> io::Result<()> {
         self.out.flush()
-    }
-
-    pub fn handle_key_common(&mut self, key: Key) -> io::Result<()> {
-        match key {
-            Key::Ctrl('l') => self.clear(),
-            Key::Left => self.move_cursor_left(1),
-            Key::Right => self.move_cursor_right(1),
-            Key::Up => self.move_up(),
-            Key::Down => self.move_down(),
-            Key::Home => self.move_cursor_to_start_of_line(),
-            Key::End => self.move_cursor_to_end_of_line(),
-            Key::Backspace => self.delete_before_cursor(),
-            Key::Delete => self.delete_after_cursor(),
-            Key::Null => Ok(()),
-            _ => Ok(()),
-        }
-    }
-
-    pub fn handle_key_emacs(&mut self, key: Key) -> io::Result<()> {
-        match key {
-            Key::Char(c) => self.insert_after_cursor(c),
-            Key::Alt(c) => self.handle_alt_key(c),
-            Key::Ctrl(c) => self.handle_ctrl_key(c),
-            _ => self.handle_key_common(key),
-        }
-    }
-
-    fn handle_ctrl_key(&mut self, c: char) -> io::Result<()> {
-        match c {
-            'l' => self.clear(),
-            'a' => self.move_cursor_to_start_of_line(),
-            'e' => self.move_cursor_to_end_of_line(),
-            'b' => self.move_cursor_left(1),
-            'f' => self.move_cursor_right(1),
-            'd' => self.delete_after_cursor(),
-            'p' => self.move_up(),
-            'n' => self.move_down(),
-            'u' => self.delete_all_before_cursor(),
-            'k' => self.delete_all_after_cursor(),
-            'w' => self.delete_word_before_cursor(true),
-            'x' => {
-                try!(self.undo());
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-    }
-
-    fn handle_alt_key(&mut self, c: char) -> io::Result<()> {
-        match c {
-            '<' => self.move_to_start_of_history(),
-            '>' => self.move_to_end_of_history(),
-            '\x7F' => self.delete_word_before_cursor(true),
-            'r' => {
-                try!(self.revert());
-                Ok(())
-            }
-            _ => Ok(()),
-        }
     }
 
     /// Attempts to undo an action on the current buffer.
@@ -627,7 +567,6 @@ impl<'a, W: Write> From<Editor<'a, W>> for String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use termion::event::Key;
     use Context;
 
     macro_rules! simulate_keys {
@@ -644,22 +583,6 @@ mod tests {
     }
 
     #[test]
-    fn enter_is_done() {
-        let mut context = Context::new();
-        let out = Vec::new();
-        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
-        ed.insert_str_after_cursor("done").unwrap();
-        assert_eq!(ed.cursor, 4);
-
-        assert!(simulate_keys!(ed, [
-            Key::Char('\n'),
-        ]));
-
-        assert_eq!(ed.cursor, 4);
-        assert_eq!(String::from(ed), "done");
-    }
-
-    #[test]
     fn move_cursor_left() {
         let mut context = Context::new();
         let out = Vec::new();
@@ -667,11 +590,10 @@ mod tests {
         ed.insert_str_after_cursor("let").unwrap();
         assert_eq!(ed.cursor, 3);
 
-        simulate_keys!(ed, [
-            Key::Left,
-            Key::Char('f'),
-        ]);
+        ed.move_cursor_left(1).unwrap();
+        assert_eq!(ed.cursor, 2);
 
+        ed.insert_after_cursor('f').unwrap();
         assert_eq!(ed.cursor, 3);
         assert_eq!(String::from(ed), "left");
     }
@@ -684,12 +606,8 @@ mod tests {
         ed.insert_str_after_cursor("right").unwrap();
         assert_eq!(ed.cursor, 5);
 
-        simulate_keys!(ed, [
-            Key::Left,
-            Key::Left,
-            Key::Right,
-        ]);
-
+        ed.move_cursor_left(2).unwrap();
+        ed.move_cursor_right(1).unwrap();
         assert_eq!(ed.cursor, 4);
     }
 }
