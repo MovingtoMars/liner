@@ -501,7 +501,11 @@ impl<'a, W: Write> Editor<'a, W> {
         let buf_width = buf.width();
         let new_prompt_and_buffer_width = buf_width + self.prompt_width;
 
-        let (w, _) = try!(termion::terminal_size());
+        let (w, _) =
+            // when testing hardcode terminal size values
+            if cfg!(test) { (80, 24) }
+            // otherwise pull values from termion
+            else { try!(termion::terminal_size()) };
         let w = w as usize;
         let new_num_lines = (new_prompt_and_buffer_width + w) / w;
 
