@@ -19,6 +19,9 @@ pub use buffer::*;
 mod history;
 pub use history::*;
 
+mod keymap;
+pub use keymap::*;
+
 mod util;
 
 #[cfg(test)]

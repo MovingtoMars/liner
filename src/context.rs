@@ -1,8 +1,9 @@
-use std::io::{self, Stdout, stdout, stdin};
+use std::io::{self, Stdout, stdout, stdin, Write};
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 
 use super::*;
+use keymap;
 
 /// The default for `Context.word_fn`.
 pub fn get_buffer_words(buf: &Buffer) -> Vec<(usize, usize)> {
@@ -62,22 +63,29 @@ impl Context {
                                       mut handler: &mut EventHandler<RawTerminal<Stdout>>)
                                       -> io::Result<String> {
         let res = {
-            let stdin = stdin();
-
             let stdout = stdout().into_raw_mode().unwrap();
-            let mut ed = try!(Editor::new(stdout, prompt.into(), self));
-
-            for c in stdin.keys() {
-                if try!(ed.handle_key(c.unwrap(), handler)) {
-                    break;
-                }
-            }
-
-            Ok(ed.into())
+            let ed = try!(Editor::new(stdout, prompt.into(), self));
+            Self::handle_keys(keymap::Emacs::new(ed), handler)
         };
 
         self.revert_all_history();
         res
+    }
+
+    fn handle_keys<'a, T, W: Write, M: KeyMap<'a, W, T>>(
+        mut keymap: M,
+        mut handler: &mut EventHandler<W>)
+    -> io::Result<String>
+        where String: From<M>
+    {
+        let stdin = stdin();
+        for c in stdin.keys() {
+            if try!(keymap.handle_key(c.unwrap(), handler)) {
+                break;
+            }
+        }
+
+        Ok(keymap.into())
     }
 
     pub fn revert_all_history(&mut self) {

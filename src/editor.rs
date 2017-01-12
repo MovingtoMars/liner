@@ -1,6 +1,5 @@
 use std::io::{self, Write};
 use termion::{self, clear, cursor};
-use termion::event::Key;
 use unicode_width::*;
 
 use Context;
@@ -150,77 +149,15 @@ impl<'a, W: Write> Editor<'a, W> {
         self.cursor
     }
 
-    pub fn handle_key(&mut self, key: Key, handler: &mut EventHandler<W>) -> io::Result<bool> {
-        let mut done = false;
-
-        send_event!(handler, self, BeforeKey, key);
-
-        match key {
-            Key::Char('\n') => {
-                try!(self.print_current_buffer(true));
-                try!(self.out.write(b"\r\n"));
-                done = true;
-            }
-            Key::Char('\t') => try!(self.complete(handler)),
-            Key::Char(c) => try!(self.insert_after_cursor(c)),
-            Key::Alt(c) => try!(self.handle_alt_key(c)),
-            Key::Ctrl(c) => try!(self.handle_ctrl_key(c)),
-            Key::Left => try!(self.move_cursor_left(1)),
-            Key::Right => try!(self.move_cursor_right(1)),
-            Key::Up => try!(self.move_up()),
-            Key::Down => try!(self.move_down()),
-            Key::Home => try!(self.move_cursor_to_start_of_line()),
-            Key::End => try!(self.move_cursor_to_end_of_line()),
-            Key::Backspace => try!(self.delete_before_cursor()),
-            Key::Delete => try!(self.delete_after_cursor()),
-            Key::Null => {}
-            _ => {}
-        }
-
-        match key {
-            Key::Char('\t') => {}
-            _ => self.show_completions_hint = false,
-        }
-
-        send_event!(handler, self, AfterKey, key);
-
-        try!(self.out.flush());
-
-        Ok(done)
+    pub fn handle_newline(&mut self) -> io::Result<()> {
+        try!(self.print_current_buffer(true));
+        try!(self.out.write(b"\r\n"));
+        self.show_completions_hint = false;
+        Ok(())
     }
 
-    fn handle_ctrl_key(&mut self, c: char) -> io::Result<()> {
-        match c {
-            'l' => self.clear(),
-            'a' => self.move_cursor_to_start_of_line(),
-            'e' => self.move_cursor_to_end_of_line(),
-            'b' => self.move_cursor_left(1),
-            'f' => self.move_cursor_right(1),
-            'd' => self.delete_after_cursor(),
-            'p' => self.move_up(),
-            'n' => self.move_down(),
-            'u' => self.delete_all_before_cursor(),
-            'k' => self.delete_all_after_cursor(),
-            'w' => self.delete_word_before_cursor(true),
-            'x' => {
-                try!(self.undo());
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-    }
-
-    fn handle_alt_key(&mut self, c: char) -> io::Result<()> {
-        match c {
-            '<' => self.move_to_start_of_history(),
-            '>' => self.move_to_end_of_history(),
-            '\x7F' => self.delete_word_before_cursor(true),
-            'r' => {
-                try!(self.revert());
-                Ok(())
-            }
-            _ => Ok(()),
-        }
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.out.flush()
     }
 
     /// Attempts to undo an action on the current buffer.
@@ -275,7 +212,11 @@ impl<'a, W: Write> Editor<'a, W> {
         Ok(())
     }
 
-    fn complete(&mut self, handler: &mut EventHandler<W>) -> io::Result<()> {
+    pub fn skip_completions_hint(&mut self) {
+        self.show_completions_hint = false;
+    }
+
+    pub fn complete(&mut self, handler: &mut EventHandler<W>) -> io::Result<()> {
         send_event!(handler, self, BeforeComplete);
 
         let (word, completions) = {
@@ -560,7 +501,11 @@ impl<'a, W: Write> Editor<'a, W> {
         let buf_width = buf.width();
         let new_prompt_and_buffer_width = buf_width + self.prompt_width;
 
-        let (w, _) = try!(termion::terminal_size());
+        let (w, _) =
+            // when testing hardcode terminal size values
+            if cfg!(test) { (80, 24) }
+            // otherwise pull values from termion
+            else { try!(termion::terminal_size()) };
         let w = w as usize;
         let new_num_lines = (new_prompt_and_buffer_width + w) / w;
 
@@ -626,7 +571,6 @@ impl<'a, W: Write> From<Editor<'a, W>> for String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use termion::event::Key;
     use Context;
 
     macro_rules! simulate_keys {
@@ -643,22 +587,6 @@ mod tests {
     }
 
     #[test]
-    fn enter_is_done() {
-        let mut context = Context::new();
-        let out = Vec::new();
-        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
-        ed.insert_str_after_cursor("done").unwrap();
-        assert_eq!(ed.cursor, 4);
-
-        assert!(simulate_keys!(ed, [
-            Key::Char('\n'),
-        ]));
-
-        assert_eq!(ed.cursor, 4);
-        assert_eq!(String::from(ed), "done");
-    }
-
-    #[test]
     fn move_cursor_left() {
         let mut context = Context::new();
         let out = Vec::new();
@@ -666,11 +594,10 @@ mod tests {
         ed.insert_str_after_cursor("let").unwrap();
         assert_eq!(ed.cursor, 3);
 
-        simulate_keys!(ed, [
-            Key::Left,
-            Key::Char('f'),
-        ]);
+        ed.move_cursor_left(1).unwrap();
+        assert_eq!(ed.cursor, 2);
 
+        ed.insert_after_cursor('f').unwrap();
         assert_eq!(ed.cursor, 3);
         assert_eq!(String::from(ed), "left");
     }
@@ -683,12 +610,8 @@ mod tests {
         ed.insert_str_after_cursor("right").unwrap();
         assert_eq!(ed.cursor, 5);
 
-        simulate_keys!(ed, [
-            Key::Left,
-            Key::Left,
-            Key::Right,
-        ]);
-
+        ed.move_cursor_left(2).unwrap();
+        ed.move_cursor_right(1).unwrap();
         assert_eq!(ed.cursor, 4);
     }
 }
