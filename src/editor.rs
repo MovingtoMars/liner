@@ -573,19 +573,6 @@ mod tests {
     use super::*;
     use Context;
 
-    macro_rules! simulate_keys {
-        ($ed:ident, $keys:expr) => {{
-            let mut done = false;
-            for k in $keys.iter() {
-                if $ed.handle_key(*k, &mut |_| {}).unwrap() {
-                    done = true;
-                    break;
-                }
-            }
-            done
-        }}
-    }
-
     #[test]
     /// test undoing delete_all_after_cursor
     fn delete_all_after_cursor_undo() {
