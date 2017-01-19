@@ -1,3 +1,7 @@
 target
 Cargo.lock
 history
+
+# vim swap files
+[._]*.s[a-w][a-z]
+[._]s[a-w][a-z]
