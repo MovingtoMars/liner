@@ -192,7 +192,8 @@ impl Buffer {
     }
 
     pub fn truncate(&mut self, num: usize) {
-        self.data.truncate(num);
+        let end = self.data.len();
+        self.remove(num, end);
     }
 
     pub fn print<W>(&self, out: &mut W) -> io::Result<()>
@@ -212,5 +213,85 @@ impl Buffer {
         for (i, &c) in text.iter().enumerate() {
             self.data.insert(start + i, c)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_insert() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        assert_eq!(String::from(buf), "abcdefg");
+    }
+
+    #[test]
+    fn test_truncate_empty() {
+        let mut buf = Buffer::new();
+        buf.truncate(0);
+        assert_eq!(String::from(buf), "");
+    }
+
+    #[test]
+    fn test_truncate_all() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        buf.truncate(0);
+        assert_eq!(String::from(buf), "");
+    }
+
+    #[test]
+    fn test_truncate_end() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        let end = buf.num_chars();
+        buf.truncate(end);
+        assert_eq!(String::from(buf), "abcdefg");
+    }
+
+    #[test]
+    fn test_truncate_part() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        buf.truncate(3);
+        assert_eq!(String::from(buf), "abc");
+    }
+
+    #[test]
+    fn test_truncate_empty_undo() {
+        let mut buf = Buffer::new();
+        buf.truncate(0);
+        buf.undo();
+        assert_eq!(String::from(buf), "");
+    }
+
+    #[test]
+    fn test_truncate_all_then_undo() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        buf.truncate(0);
+        buf.undo();
+        assert_eq!(String::from(buf), "abcdefg");
+    }
+
+    #[test]
+    fn test_truncate_end_then_undo() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        let end = buf.num_chars();
+        buf.truncate(end);
+        buf.undo();
+        assert_eq!(String::from(buf), "abcdefg");
+    }
+
+    #[test]
+    fn test_truncate_part_then_undo() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        buf.truncate(3);
+        buf.undo();
+        assert_eq!(String::from(buf), "abcdefg");
     }
 }

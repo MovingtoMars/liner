@@ -560,7 +560,11 @@ impl<'a, W: Write> Editor<'a, W> {
         let buf_width = buf.width();
         let new_prompt_and_buffer_width = buf_width + self.prompt_width;
 
-        let (w, _) = try!(termion::terminal_size());
+        let (w, _) =
+            // when testing hardcode terminal size values
+            if cfg!(test) { (80, 24) }
+            // otherwise pull values from termion
+            else { try!(termion::terminal_size()) };
         let w = w as usize;
         let new_num_lines = (new_prompt_and_buffer_width + w) / w;
 
@@ -640,6 +644,19 @@ mod tests {
             }
             done
         }}
+    }
+
+    #[test]
+    /// test undoing delete_all_after_cursor
+    fn delete_all_after_cursor_undo() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("delete all of this").unwrap();
+        ed.move_cursor_to_start_of_line().unwrap();
+        ed.delete_all_after_cursor().unwrap();
+        ed.undo().unwrap();
+        assert_eq!(String::from(ed), "delete all of this");
     }
 
     #[test]
