@@ -72,10 +72,9 @@ impl Context {
         res
     }
 
-    fn handle_keys<'a, T, W: Write, M: KeyMap<'a, W, T>>(
-        mut keymap: M,
-        mut handler: &mut EventHandler<W>)
-    -> io::Result<String>
+    fn handle_keys<'a, T, W: Write, M: KeyMap<'a, W, T>>(mut keymap: M,
+                                                         mut handler: &mut EventHandler<W>)
+                                                         -> io::Result<String>
         where String: From<M>
     {
         let stdin = stdin();

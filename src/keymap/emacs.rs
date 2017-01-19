@@ -10,9 +10,7 @@ pub struct Emacs<'a, W: Write> {
 
 impl<'a, W: Write> Emacs<'a, W> {
     pub fn new(ed: Editor<'a, W>) -> Self {
-        Emacs {
-            ed: ed,
-        }
+        Emacs { ed: ed }
     }
 
     fn handle_ctrl_key(&mut self, c: char) -> io::Result<()> {
@@ -48,7 +46,6 @@ impl<'a, W: Write> Emacs<'a, W> {
             _ => Ok(()),
         }
     }
-
 }
 
 impl<'a, W: Write> KeyMap<'a, W, Emacs<'a, W>> for Emacs<'a, W> {
@@ -70,7 +67,7 @@ impl<'a, W: Write> KeyMap<'a, W, Emacs<'a, W>> for Emacs<'a, W> {
         }
     }
 
-    fn editor(&mut self) ->  &mut Editor<'a, W> {
+    fn editor(&mut self) -> &mut Editor<'a, W> {
         &mut self.ed
     }
 }
@@ -97,7 +94,7 @@ mod tests {
     }
 
     fn simulate_keys<'a, 'b, W: Write, T, M: KeyMap<'a, W, T>, I>(keymap: &mut M, keys: I) -> bool
-        where I: Iterator<Item=&'b Key>
+        where I: Iterator<Item = &'b Key>
     {
         for k in keys {
             if keymap.handle_key(*k, &mut |_| {}).unwrap() {
@@ -117,9 +114,7 @@ mod tests {
         map.ed.insert_str_after_cursor("done").unwrap();
         assert_eq!(map.ed.cursor(), 4);
 
-        assert!(simulate_keys!(map, [
-            Key::Char('\n'),
-        ]));
+        assert!(simulate_keys!(map, [Key::Char('\n')]));
 
         assert_eq!(map.ed.cursor(), 4);
         assert_eq!(String::from(map), "done");
@@ -134,10 +129,7 @@ mod tests {
         map.editor().insert_str_after_cursor("let").unwrap();
         assert_eq!(map.ed.cursor(), 3);
 
-        simulate_keys!(map, [
-            Key::Left,
-            Key::Char('f'),
-        ]);
+        simulate_keys!(map, [Key::Left, Key::Char('f')]);
 
         assert_eq!(map.ed.cursor(), 3);
         assert_eq!(String::from(map), "left");
@@ -152,11 +144,7 @@ mod tests {
         map.ed.insert_str_after_cursor("right").unwrap();
         assert_eq!(map.ed.cursor(), 5);
 
-        simulate_keys!(map, [
-            Key::Left,
-            Key::Left,
-            Key::Right,
-        ]);
+        simulate_keys!(map, [Key::Left, Key::Left, Key::Right]);
 
         assert_eq!(map.ed.cursor(), 4);
     }

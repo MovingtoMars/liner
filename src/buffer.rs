@@ -5,14 +5,8 @@ use std::fmt::{self, Write as FmtWrite};
 
 #[derive(Debug,Clone)]
 pub enum Action {
-    Insert {
-        start: usize,
-        text: Vec<char>,
-    },
-    Remove {
-        start: usize,
-        text: Vec<char>,
-    },
+    Insert { start: usize, text: Vec<char> },
+    Remove { start: usize, text: Vec<char> },
 }
 
 impl Action {

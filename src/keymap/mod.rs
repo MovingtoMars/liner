@@ -3,7 +3,7 @@ use termion::event::Key;
 use Editor;
 use event::*;
 
-pub trait KeyMap<'a, W: Write, T> : From<T> {
+pub trait KeyMap<'a, W: Write, T>: From<T> {
     fn handle_key_core(&mut self, key: Key) -> io::Result<()>;
     fn editor(&mut self) -> &mut Editor<'a, W>;
 
