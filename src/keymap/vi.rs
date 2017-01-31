@@ -41,6 +41,7 @@ impl ModeStack {
 pub struct Vi<'a, W: Write> {
     ed: Editor<'a, W>,
     mode_stack: ModeStack,
+    count: u32,
 }
 
 impl<'a, W: Write> Vi<'a, W> {
@@ -48,6 +49,7 @@ impl<'a, W: Write> Vi<'a, W> {
         Vi {
             ed: ed,
             mode_stack: ModeStack::with_insert(),
+            count: 0,
         }
     }
 
@@ -85,6 +87,9 @@ impl<'a, W: Write> Vi<'a, W> {
     fn handle_key_insert(&mut self, key: Key) -> io::Result<()> {
         match key {
             Key::Esc => {
+                if self.count > 0 {
+                    self.count = 0;
+                }
                 // cursor moves to the left when switching from insert to normal mode
                 try!(self.ed.move_cursor_left(1));
                 self.pop_mode();
@@ -99,6 +104,10 @@ impl<'a, W: Write> Vi<'a, W> {
         use self::Mode::*;
 
         match key {
+            Key::Esc => {
+                self.count = 0;
+                Ok(())
+            }
             Key::Char('i') => {
                 self.set_mode(Insert);
                 Ok(())
@@ -123,7 +132,18 @@ impl<'a, W: Write> Vi<'a, W> {
             }
             Key::Char('k') => self.ed.move_up(),
             Key::Char('j') => self.ed.move_down(),
-            Key::Char('0') => self.ed.move_cursor_to_start_of_line(),
+            // if count is 0, 0 should move to start of line
+            Key::Char('0') if self.count == 0 => {
+                self.ed.move_cursor_to_start_of_line()
+            }
+            Key::Char(i @ '0'...'9') => {
+                let i = i.to_digit(10).unwrap();
+                // count = count * 10 + i
+                self.count = self.count
+                    .saturating_mul(10)
+                    .saturating_add(i);
+                Ok(())
+            }
             Key::Char('$') => self.ed.move_cursor_to_end_of_line(),
             _ => self.handle_key_common(key),
         }
@@ -341,5 +361,111 @@ mod tests {
         // in normal mode, make sure we don't end up past the last char
         simulate_keys!(map, [Esc, Up]);
         assert_eq!(map.ed.cursor(), 6);
+    }
+
+    #[test]
+    /// make sure our count is accurate
+    fn vi_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+        ]);
+        assert_eq!(map.count, 0);
+
+        simulate_keys!(map, [
+            Char('1'),
+        ]);
+        assert_eq!(map.count, 1);
+
+        simulate_keys!(map, [
+            Char('1'),
+        ]);
+        assert_eq!(map.count, 11);
+
+        // switching to insert mode and back to edit mode should reset the count
+        simulate_keys!(map, [
+            Char('i'),
+            Esc,
+        ]);
+        assert_eq!(map.count, 0);
+
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// make sure large counts don't overflow
+    fn vi_count_overflow() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        // make sure large counts don't overflow our u32
+        simulate_keys!(map, [
+            Esc,
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+        ]);
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// make sure large counts ending in zero don't overflow
+    fn vi_count_overflow_zero() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        // make sure large counts don't overflow our u32
+        simulate_keys!(map, [
+            Esc,
+            Char('1'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+        ]);
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// Esc should cancel the count
+    fn vi_count_cancel() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('1'),
+            Char('0'),
+            Esc,
+        ]);
+        assert_eq!(map.count, 0);
+        assert_eq!(String::from(map), "");
     }
 }
