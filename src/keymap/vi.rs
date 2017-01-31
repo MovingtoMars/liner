@@ -1,3 +1,4 @@
+use std::cmp;
 use std::io::{self, Write};
 use termion::event::Key;
 
@@ -63,9 +64,40 @@ impl<'a, W: Write> Vi<'a, W> {
         self.mode_stack.push(mode);
     }
 
+    fn pop_mode_after_movement(&mut self) -> io::Result<()> {
+        use self::Mode::*;
+
+        self.ed.no_eol = self.mode() == Mode::Normal;
+
+        // in normal mode, count goes back to 0 after movement
+        if self.mode_stack.pop() == Normal {
+            self.count = 0;
+        }
+
+        Ok(())
+    }
+
     fn pop_mode(&mut self) {
         self.mode_stack.pop();
         self.ed.no_eol = self.mode() == Mode::Normal;
+    }
+
+    /// When doing a move, 0 should behave the same as 1 as far as the count goes.
+    fn move_count(&mut self) -> usize {
+        match self.count {
+            0 => 1,
+            _ => self.count as usize,
+        }
+    }
+
+    /// Get the current count or the number of remaining chars in the buffer.
+    fn move_count_left(&mut self) -> usize {
+        cmp::min(self.ed.cursor(), self.move_count())
+    }
+
+    /// Get the current count or the number of remaining chars in the buffer.
+    fn move_count_right(&mut self) -> usize {
+        cmp::min(self.ed.current_buffer().num_chars() - self.ed.cursor(), self.move_count())
     }
 
     fn handle_key_common(&mut self, key: Key) -> io::Result<()> {
@@ -125,16 +157,27 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.ed.move_cursor_to_start_of_line()
             }
             Key::Char('h') | Key::Left | Key::Backspace => {
-                self.ed.move_cursor_left(1)
+                let count = self.move_count_left();
+                try!(self.ed.move_cursor_left(count));
+                self.pop_mode_after_movement()
             }
             Key::Char('l') | Key::Right | Key::Char(' ') => {
-                self.ed.move_cursor_right(1)
+                let count = self.move_count_right();
+                try!(self.ed.move_cursor_right(count));
+                self.pop_mode_after_movement()
             }
-            Key::Char('k') => self.ed.move_up(),
-            Key::Char('j') => self.ed.move_down(),
+            Key::Char('k') | Key::Up =>  {
+                try!(self.ed.move_up());
+                self.pop_mode_after_movement()
+            }
+            Key::Char('j') | Key::Down => {
+                try!(self.ed.move_down());
+                self.pop_mode_after_movement()
+            }
             // if count is 0, 0 should move to start of line
             Key::Char('0') if self.count == 0 => {
-                self.ed.move_cursor_to_start_of_line()
+                try!(self.ed.move_cursor_to_start_of_line());
+                self.pop_mode_after_movement()
             }
             Key::Char(i @ '0'...'9') => {
                 let i = i.to_digit(10).unwrap();
@@ -144,7 +187,10 @@ impl<'a, W: Write> Vi<'a, W> {
                     .saturating_add(i);
                 Ok(())
             }
-            Key::Char('$') => self.ed.move_cursor_to_end_of_line(),
+            Key::Char('$') => {
+                try!(self.ed.move_cursor_to_end_of_line());
+                self.pop_mode_after_movement()
+            }
             _ => self.handle_key_common(key),
         }
     }
@@ -467,5 +513,102 @@ mod tests {
         ]);
         assert_eq!(map.count, 0);
         assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// test move_count function
+    fn move_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        assert_eq!(map.move_count(), 1);
+        map.count = 1;
+        assert_eq!(map.move_count(), 1);
+        map.count = 99;
+        assert_eq!(map.move_count(), 99);
+    }
+
+    #[test]
+    /// test movement with counts
+    fn movement_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("right").unwrap();
+        assert_eq!(map.ed.cursor(), 5);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Left,
+        ]);
+
+        assert_eq!(map.ed.cursor(), 1);
+    }
+
+    #[test]
+    /// test movement with counts, then insert (count should be reset before insert)
+    fn movement_with_count_then_insert() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("right").unwrap();
+        assert_eq!(map.ed.cursor(), 5);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Left,
+            Char('i'),
+            Char(' '),
+            Esc,
+        ]);
+        assert_eq!(String::from(map), "r ight");
+    }
+
+    #[test]
+    /// verify our move count
+    fn move_count_right() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+        assert_eq!(map.move_count_right(), 0);
+        map.count = 10;
+        assert_eq!(map.move_count_right(), 0);
+
+        map.count = 0;
+        simulate_keys!(map, [
+            Esc,
+            Left,
+        ]);
+        assert_eq!(map.move_count_right(), 1);
+    }
+
+    #[test]
+    /// verify our move count
+    fn move_count_left() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+        assert_eq!(map.move_count_left(), 1);
+        map.count = 10;
+        assert_eq!(map.move_count_left(), 7);
+
+        map.count = 0;
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+        ]);
+        assert_eq!(map.move_count_left(), 0);
     }
 }
