@@ -268,6 +268,15 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.set_mode(Insert);
                 self.ed.move_cursor_to_start_of_line()
             }
+            Key::Char('s') => {
+                self.last_insert = Some(key);
+                self.set_mode(Insert);
+                let pos = self.ed.cursor() + self.move_count_right();
+                try!(self.ed.delete_until(pos));
+                self.last_count = self.count;
+                self.count = 0;
+                Ok(())
+            }
             Key::Char('.') => {
                 // repeat the last command
                 self.count = match (self.count, self.last_count) {
@@ -587,6 +596,67 @@ mod tests {
         ]);
         assert_eq!(map.ed.cursor(), 0);
         assert_eq!(String::from(map), "ta");
+    }
+
+    #[test]
+    fn vi_substitute_command() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("data").unwrap();
+        assert_eq!(map.ed.cursor(), 4);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('s'),
+            Char('s'),
+        ]);
+        assert_eq!(String::from(map), "sata");
+    }
+
+    #[test]
+    fn substitute_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("data").unwrap();
+        assert_eq!(map.ed.cursor(), 4);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('2'),
+            Char('s'),
+            Char('b'),
+            Char('e'),
+        ]);
+        assert_eq!(String::from(map), "beta");
+    }
+
+    #[test]
+    fn substitute_with_count_repeat() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("data data").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('2'),
+            Char('s'),
+            Char('b'),
+            Char('e'),
+            Esc,
+            Char('4'),
+            Char('l'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "beta beta");
     }
 
     #[test]
@@ -1228,5 +1298,57 @@ mod tests {
             Char('u'),
         ]);
         assert_eq!(String::from(map), "insert");
+    }
+
+    #[test]
+    /// test undo in groups
+    fn undo_s_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace some words").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('8'),
+            Char('s'),
+            Char('o'),
+            Char('k'),
+            Esc,
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "replace some words");
+    }
+
+    #[test]
+    /// test undo in groups
+    fn undo_multiple_groups() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace some words").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('A'),
+            Char(' '),
+            Char('h'),
+            Char('e'),
+            Char('r'),
+            Char('e'),
+            Esc,
+            Char('0'),
+            Char('8'),
+            Char('s'),
+            Char('o'),
+            Char('k'),
+            Esc,
+            Char('2'),
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "replace some words");
     }
 }
