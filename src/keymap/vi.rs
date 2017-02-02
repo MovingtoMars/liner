@@ -1,4 +1,4 @@
-use std::cmp;
+use std::{mem, cmp};
 use std::io::{self, Write};
 use termion::event::Key;
 
@@ -42,7 +42,9 @@ impl ModeStack {
 pub struct Vi<'a, W: Write> {
     ed: Editor<'a, W>,
     mode_stack: ModeStack,
+    last_command: Vec<Key>,
     count: u32,
+    movement_reset: bool,
 }
 
 impl<'a, W: Write> Vi<'a, W> {
@@ -50,7 +52,9 @@ impl<'a, W: Write> Vi<'a, W> {
         Vi {
             ed: ed,
             mode_stack: ModeStack::with_insert(),
+            last_command: Vec::new(),
             count: 0,
+            movement_reset: false,
         }
     }
 
@@ -61,6 +65,7 @@ impl<'a, W: Write> Vi<'a, W> {
 
     fn set_mode(&mut self, mode: Mode) {
         self.ed.no_eol = mode == Mode::Normal;
+        self.movement_reset = mode != Mode::Insert;
         self.mode_stack.push(mode);
     }
 
@@ -68,6 +73,7 @@ impl<'a, W: Write> Vi<'a, W> {
         use self::Mode::*;
 
         self.ed.no_eol = self.mode() == Mode::Normal;
+        self.movement_reset = self.mode() != Mode::Insert;
 
         // in normal mode, count goes back to 0 after movement
         if self.mode_stack.pop() == Normal {
@@ -78,8 +84,11 @@ impl<'a, W: Write> Vi<'a, W> {
     }
 
     fn pop_mode(&mut self) {
+        use self::Mode::*;
+
         self.mode_stack.pop();
-        self.ed.no_eol = self.mode() == Mode::Normal;
+        self.ed.no_eol = self.mode() == Normal;
+        self.movement_reset = self.mode() != Insert;
     }
 
     /// When doing a move, 0 should behave the same as 1 as far as the count goes.
@@ -119,7 +128,14 @@ impl<'a, W: Write> Vi<'a, W> {
     fn handle_key_insert(&mut self, key: Key) -> io::Result<()> {
         match key {
             Key::Esc => {
+                // perform any repeats
                 if self.count > 0 {
+                    for _ in 1..self.count {
+                        let keys = mem::replace(&mut self.last_command, Vec::new());
+                        for k in keys.into_iter() {
+                            try!(self.handle_key_core(k));
+                        }
+                    }
                     self.count = 0;
                 }
                 // cursor moves to the left when switching from insert to normal mode
@@ -127,7 +143,29 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.pop_mode();
                 Ok(())
             }
-            Key::Char(c) => self.ed.insert_after_cursor(c),
+            Key::Char(c) => {
+                if self.movement_reset {
+                    self.last_command.clear();
+                    self.movement_reset = false;
+                }
+                self.last_command.push(key);
+                self.ed.insert_after_cursor(c)
+            }
+            // delete and backspace need to be included in the command buffer
+            Key::Backspace | Key::Delete => {
+                if self.movement_reset {
+                    self.last_command.clear();
+                    self.movement_reset = false;
+                }
+                self.last_command.push(key);
+                self.handle_key_common(key)
+            }
+            // if this is a movement while in insert mode, reset the repeat count
+            Key::Left | Key::Right | Key::Home | Key::End | Key::Up | Key::Down => {
+                self.count = 0;
+                self.movement_reset = true;
+                self.handle_key_common(key)
+            }
             _ => self.handle_key_common(key),
         }
     }
@@ -516,6 +554,27 @@ mod tests {
     }
 
     #[test]
+    /// test insert with a count
+    fn vi_count_simple() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Char('i'),
+            Char('t'),
+            Char('h'),
+            Char('i'),
+            Char('s'),
+            Esc,
+        ]);
+        assert_eq!(String::from(map), "thisthisthis");
+    }
+
+    #[test]
     /// test move_count function
     fn move_count() {
         let mut context = Context::new();
@@ -528,6 +587,28 @@ mod tests {
         assert_eq!(map.move_count(), 1);
         map.count = 99;
         assert_eq!(map.move_count(), 99);
+    }
+
+    #[test]
+    /// make sure the count is reset if movement occurs
+    fn vi_count_movement_reset() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Char('i'),
+            Char('t'),
+            Char('h'),
+            Char('i'),
+            Char('s'),
+            Left,
+            Esc,
+        ]);
+        assert_eq!(String::from(map), "this");
     }
 
     #[test]
