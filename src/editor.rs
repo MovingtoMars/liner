@@ -1,3 +1,4 @@
+use std::cmp;
 use std::io::{self, Write};
 use termion::{self, clear, cursor};
 use unicode_width::*;
@@ -444,6 +445,16 @@ impl<'a, W: Write> Editor<'a, W> {
         self.print_current_buffer(false)
     }
 
+    /// Deletes every character from the cursor until the given position.
+    pub fn delete_until(&mut self, position: usize) -> io::Result<()> {
+        {
+            let buf = cur_buf_mut!(self);
+            buf.remove(cmp::min(self.cursor, position), cmp::max(self.cursor, position));
+            self.cursor = cmp::min(self.cursor, position);
+        }
+        self.print_current_buffer(false)
+    }
+
     /// Moves the cursor to the left by `count` characters.
     /// The cursor will not go past the start of the buffer.
     pub fn move_cursor_left(&mut self, mut count: usize) -> io::Result<()> {
@@ -631,5 +642,44 @@ mod tests {
         ed.move_cursor_left(2).unwrap();
         ed.move_cursor_right(1).unwrap();
         assert_eq!(ed.cursor, 4);
+    }
+
+    #[test]
+    fn delete_until_backwards() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("right").unwrap();
+        assert_eq!(ed.cursor, 5);
+
+        ed.delete_until(0).unwrap();
+        assert_eq!(ed.cursor, 0);
+        assert_eq!(String::from(ed), "");
+    }
+
+    #[test]
+    fn delete_until_forwards() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("right").unwrap();
+        ed.cursor = 0;
+
+        ed.delete_until(5).unwrap();
+        assert_eq!(ed.cursor, 0);
+        assert_eq!(String::from(ed), "");
+    }
+
+    #[test]
+    fn delete_until() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("right").unwrap();
+        ed.cursor = 4;
+
+        ed.delete_until(1).unwrap();
+        assert_eq!(ed.cursor, 1);
+        assert_eq!(String::from(ed), "rt");
     }
 }
