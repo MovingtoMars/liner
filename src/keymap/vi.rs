@@ -50,7 +50,10 @@ pub struct Vi<'a, W: Write> {
 }
 
 impl<'a, W: Write> Vi<'a, W> {
-    pub fn new(ed: Editor<'a, W>) -> Self {
+    pub fn new(mut ed: Editor<'a, W>) -> Self {
+        // since we start in insert mode, we need to start an undo group
+        ed.current_buffer_mut().start_undo_group();
+
         Vi {
             ed: ed,
             mode_stack: ModeStack::with_insert(),
@@ -78,6 +81,7 @@ impl<'a, W: Write> Vi<'a, W> {
         if mode == Insert {
             self.last_count = 0;
             self.last_command.clear();
+            self.ed.current_buffer_mut().start_undo_group();
         }
     }
 
@@ -98,9 +102,13 @@ impl<'a, W: Write> Vi<'a, W> {
     fn pop_mode(&mut self) {
         use self::Mode::*;
 
-        self.mode_stack.pop();
+        let last_mode = self.mode_stack.pop();
         self.ed.no_eol = self.mode() == Normal;
         self.movement_reset = self.mode() != Insert;
+
+        if last_mode == Insert {
+            self.ed.current_buffer_mut().end_undo_group();
+        }
     }
 
     /// When doing a move, 0 should behave the same as 1 as far as the count goes.
@@ -182,6 +190,8 @@ impl<'a, W: Write> Vi<'a, W> {
             }
             Key::Char(c) => {
                 if self.movement_reset {
+                    self.ed.current_buffer_mut().end_undo_group();
+                    self.ed.current_buffer_mut().start_undo_group();
                     self.last_command.clear();
                     self.movement_reset = false;
                     // vim behaves as if this was 'i'
@@ -193,6 +203,8 @@ impl<'a, W: Write> Vi<'a, W> {
             // delete and backspace need to be included in the command buffer
             Key::Backspace | Key::Delete => {
                 if self.movement_reset {
+                    self.ed.current_buffer_mut().end_undo_group();
+                    self.ed.current_buffer_mut().start_undo_group();
                     self.last_command.clear();
                     self.movement_reset = false;
                     // vim behaves as if this was 'i'
@@ -202,10 +214,27 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.handle_key_common(key)
             }
             // if this is a movement while in insert mode, reset the repeat count
-            Key::Left | Key::Right | Key::Home | Key::End | Key::Up | Key::Down => {
+            Key::Left | Key::Right | Key::Home | Key::End => {
                 self.count = 0;
                 self.movement_reset = true;
                 self.handle_key_common(key)
+            }
+            // up and down require even more special handling
+            Key::Up => {
+                self.count = 0;
+                self.movement_reset = true;
+                self.ed.current_buffer_mut().end_undo_group();
+                try!(self.ed.move_up());
+                self.ed.current_buffer_mut().start_undo_group();
+                Ok(())
+            }
+            Key::Down => {
+                self.count = 0;
+                self.movement_reset = true;
+                self.ed.current_buffer_mut().end_undo_group();
+                try!(self.ed.move_down());
+                self.ed.current_buffer_mut().start_undo_group();
+                Ok(())
             }
             _ => self.handle_key_common(key),
         }
@@ -286,6 +315,28 @@ impl<'a, W: Write> Vi<'a, W> {
                 try!(self.ed.move_cursor_to_end_of_line());
                 self.pop_mode_after_movement()
             }
+            Key::Char('u') => {
+                let count = self.move_count();
+                self.count = 0;
+                for _ in 0..count {
+                    let did = try!(self.ed.undo());
+                    if !did {
+                        break;
+                    }
+                }
+                Ok(())
+            }
+            Key::Ctrl('r') => {
+                let count = self.move_count();
+                self.count = 0;
+                for _ in 0..count {
+                    let did = try!(self.ed.redo());
+                    if !did {
+                        break;
+                    }
+                }
+                Ok(())
+            }
             _ => self.handle_key_common(key),
         }
     }
@@ -316,6 +367,7 @@ mod tests {
     use super::*;
     use termion::event::Key;
     use termion::event::Key::*;
+    use Buffer;
     use Context;
     use Editor;
     use KeyMap;
@@ -868,5 +920,198 @@ mod tests {
             Char('0'),
         ]);
         assert_eq!(map.move_count_left(), 0);
+    }
+
+    #[test]
+    /// test undo in groups
+    fn undo_insert() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Char('i'),
+            Char('n'),
+            Char('s'),
+            Char('e'),
+            Char('r'),
+            Char('t'),
+            Esc,
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// test undo in groups
+    fn undo_insert2() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('i'),
+            Char('i'),
+            Char('n'),
+            Char('s'),
+            Char('e'),
+            Char('r'),
+            Char('t'),
+            Esc,
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// test undo in groups
+    fn undo_insert_with_history() {
+        let mut context = Context::new();
+        context.history.push(Buffer::from("")).unwrap();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('i'),
+            Char('i'),
+            Char('n'),
+            Char('s'),
+            Char('e'),
+            Char('r'),
+            Char('t'),
+            Up,
+            Char('h'),
+            Char('i'),
+            Char('s'),
+            Char('t'),
+            Char('o'),
+            Char('r'),
+            Char('y'),
+            Down,
+            Char(' '),
+            Char('t'),
+            Char('e'),
+            Char('x'),
+            Char('t'),
+            Esc,
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "insert");
+    }
+
+    #[test]
+    /// test undo in groups
+    fn undo_insert_with_history2() {
+        let mut context = Context::new();
+        context.history.push(Buffer::from("")).unwrap();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('i'),
+            Char('i'),
+            Char('n'),
+            Char('s'),
+            Char('e'),
+            Char('r'),
+            Char('t'),
+            Up,
+            Esc,
+            Down,
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// test undo in groups
+    fn undo_insert_with_movement_reset() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('i'),
+            Char('i'),
+            Char('n'),
+            Char('s'),
+            Char('e'),
+            Char('r'),
+            Char('t'),
+            // movement reset will get triggered here
+            Left,
+            Right,
+            Char(' '),
+            Char('t'),
+            Char('e'),
+            Char('x'),
+            Char('t'),
+            Esc,
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "insert");
+    }
+
+    #[test]
+    /// test undo in groups
+    fn undo_insert_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Char('i'),
+            Char('n'),
+            Char('s'),
+            Char('e'),
+            Char('r'),
+            Char('t'),
+            Esc,
+            Char('3'),
+            Char('i'),
+            Char('i'),
+            Char('n'),
+            Char('s'),
+            Char('e'),
+            Char('r'),
+            Char('t'),
+            Esc,
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "insert");
+    }
+
+    #[test]
+    /// test undo in groups
+    fn undo_insert_with_repeat() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Char('i'),
+            Char('n'),
+            Char('s'),
+            Char('e'),
+            Char('r'),
+            Char('t'),
+            Esc,
+            Char('3'),
+            Char('.'),
+            Esc,
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "insert");
     }
 }
