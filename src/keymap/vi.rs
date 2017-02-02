@@ -315,6 +315,18 @@ impl<'a, W: Write> Vi<'a, W> {
                 try!(self.ed.move_cursor_to_end_of_line());
                 self.pop_mode_after_movement()
             }
+            Key::Char('x') | Key::Delete => {
+                // update the last command state
+                self.last_insert = None;
+                self.last_command.clear();
+                self.last_command.push(key);
+                self.last_count = self.count;
+
+                let pos = self.ed.cursor() + self.move_count_right();
+                try!(self.ed.delete_until(pos));
+                self.count = 0;
+                Ok(())
+            }
             Key::Char('u') => {
                 let count = self.move_count();
                 self.count = 0;
@@ -554,6 +566,27 @@ mod tests {
         // in normal mode, make sure we don't end up past the last char
         simulate_keys!(map, [Esc, Up]);
         assert_eq!(map.ed.cursor(), 6);
+    }
+
+    #[test]
+    fn vi_normal_delete() {
+        let mut context = Context::new();
+        context.history.push("history".into()).unwrap();
+        context.history.push("history".into()).unwrap();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("data").unwrap();
+        assert_eq!(map.ed.cursor(), 4);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Delete,
+            Char('x'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "ta");
     }
 
     #[test]
@@ -923,6 +956,69 @@ mod tests {
     }
 
     #[test]
+    /// test delete with dot
+    fn dot_x_delete() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('2'),
+            Char('x'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "ace");
+    }
+
+    #[test]
+    /// undo with counts
+    fn test_undo_with_counts() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abcdefg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('x'),
+            Char('x'),
+            Char('x'),
+            Char('3'),
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "abcdefg");
+    }
+
+    #[test]
+    /// redo with counts
+    fn test_redo_with_counts() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abcdefg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('x'),
+            Char('x'),
+            Char('x'),
+            Char('u'),
+            Char('u'),
+            Char('u'),
+            Char('2'),
+            Ctrl('r'),
+        ]);
+        assert_eq!(String::from(map), "abcde");
+    }
+
+    #[test]
     /// test undo in groups
     fn undo_insert() {
         let mut context = Context::new();
@@ -1059,6 +1155,25 @@ mod tests {
             Char('u'),
         ]);
         assert_eq!(String::from(map), "insert");
+    }
+
+    #[test]
+    /// test undo in groups
+    fn undo_3x() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("rm some words").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('3'),
+            Char('x'),
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "rm some words");
     }
 
     #[test]
