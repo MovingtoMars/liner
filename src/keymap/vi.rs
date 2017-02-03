@@ -10,6 +10,7 @@ use Editor;
 enum Mode {
     Insert,
     Normal,
+    Replace,
 }
 
 struct ModeStack(Vec<Mode>);
@@ -26,6 +27,11 @@ impl ModeStack {
         self.0.last()
             .map(|&m| m)
             .unwrap_or(Mode::Normal)
+    }
+
+    /// Empty the stack and return to normal mode.
+    fn clear(&mut self) {
+        self.0.clear()
     }
 
     /// Push the given mode on to the stack.
@@ -109,6 +115,13 @@ impl<'a, W: Write> Vi<'a, W> {
         if last_mode == Insert {
             self.ed.current_buffer_mut().end_undo_group();
         }
+    }
+
+    /// Return to normal mode.
+    fn normal_mode_abort(&mut self) {
+        self.mode_stack.clear();
+        self.ed.no_eol = true;
+        self.count = 0;
     }
 
     /// When doing a move, 0 should behave the same as 1 as far as the count goes.
@@ -277,6 +290,10 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.count = 0;
                 Ok(())
             }
+            Key::Char('r') => {
+                self.set_mode(Mode::Replace);
+                Ok(())
+            }
             Key::Char('.') => {
                 // repeat the last command
                 self.count = match (self.count, self.last_count) {
@@ -362,6 +379,40 @@ impl<'a, W: Write> Vi<'a, W> {
         }
     }
 
+    fn handle_key_replace(&mut self, key: Key) -> io::Result<()> {
+        match key {
+            Key::Char(c) => {
+                // make sure there are enough chars to replace
+                if self.move_count_right() == self.move_count() {
+                    // update the last command state
+                    self.last_insert = None;
+                    self.last_command.clear();
+                    self.last_command.push(Key::Char('r'));
+                    self.last_command.push(key);
+                    self.last_count = self.count;
+
+                    // replace count characters
+                    self.ed.current_buffer_mut().start_undo_group();
+                    for _ in 0..self.move_count_right() {
+                        try!(self.ed.delete_after_cursor());
+                        try!(self.ed.insert_after_cursor(c));
+                    }
+                    self.ed.current_buffer_mut().end_undo_group();
+
+                    try!(self.ed.move_cursor_left(1));
+                }
+                self.pop_mode();
+            }
+            // not a char
+            _ => {
+                self.normal_mode_abort();
+            }
+        };
+
+        // back to normal mode
+        self.count = 0;
+        Ok(())
+    }
 }
 
 impl<'a, W: Write> KeyMap<'a, W, Vi<'a, W>> for Vi<'a, W> {
@@ -369,6 +420,7 @@ impl<'a, W: Write> KeyMap<'a, W, Vi<'a, W>> for Vi<'a, W> {
         match self.mode() {
             Mode::Normal => self.handle_key_normal(key),
             Mode::Insert => self.handle_key_insert(key),
+            Mode::Replace => self.handle_key_replace(key),
         }
     }
 
@@ -984,6 +1036,201 @@ mod tests {
     }
 
     #[test]
+    /// make sure we only attempt to repeat for as many chars are in the buffer
+    fn count_at_buffer_edge() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Char('r'),
+            Char('x'),
+        ]);
+        // the cursor should not have moved and no change should have occured
+        assert_eq!(map.ed.cursor(), 6);
+        assert_eq!(String::from(map), "replace");
+    }
+
+    #[test]
+    /// test basic replace
+    fn basic_replace() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('r'),
+            Char('x'),
+        ]);
+        assert_eq!(map.ed.cursor(), 6);
+        assert_eq!(String::from(map), "replacx");
+    }
+
+    #[test]
+    fn replace_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('3'),
+            Char('r'),
+            Char(' '),
+        ]);
+        // cursor should be on the last replaced char
+        assert_eq!(map.ed.cursor(), 2);
+        assert_eq!(String::from(map), "   lace");
+    }
+
+    #[test]
+    /// make sure replace won't work if there aren't enough chars
+    fn replace_with_count_eol() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Char('r'),
+            Char('x'),
+        ]);
+        // the cursor should not have moved and no change should have occured
+        assert_eq!(map.ed.cursor(), 6);
+        assert_eq!(String::from(map), "replace");
+    }
+
+    #[test]
+    /// make sure normal mode is enabled after replace
+    fn replace_then_normal() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('r'),
+            Char('x'),
+            Char('0'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "replacx");
+    }
+
+    #[test]
+    /// test replace with dot
+    fn dot_replace() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('r'),
+            Char('x'),
+            Char('.'),
+            Char('.'),
+            Char('7'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "xxxxxxx");
+    }
+
+    #[test]
+    /// test replace with dot
+    fn dot_replace_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('2'),
+            Char('r'),
+            Char('x'),
+            Char('.'),
+            Char('.'),
+            Char('.'),
+            Char('.'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "xxxxxxx");
+    }
+
+    #[test]
+    /// test replace with dot at eol
+    fn dot_replace_eol() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("test").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('3'),
+            Char('r'),
+            Char('x'),
+            Char('.'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "xxxt");
+    }
+
+    #[test]
+    /// test replace with dot at eol multiple times
+    fn dot_replace_eol_multiple() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("this is a test").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('3'),
+            Char('r'),
+            Char('x'),
+            Char('$'),
+            Char('.'),
+            Char('4'),
+            Char('h'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "xxxs is axxxst");
+    }
+
+    #[test]
     /// verify our move count
     fn move_count_right() {
         let mut context = Context::new();
@@ -1347,6 +1594,26 @@ mod tests {
             Char('k'),
             Esc,
             Char('2'),
+            Char('u'),
+        ]);
+        assert_eq!(String::from(map), "replace some words");
+    }
+
+    #[test]
+    /// test undo in groups
+    fn undo_r_command_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace some words").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('8'),
+            Char('r'),
+            Char(' '),
             Char('u'),
         ]);
         assert_eq!(String::from(map), "replace some words");
