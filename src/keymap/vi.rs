@@ -294,6 +294,16 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.set_mode(Mode::Replace);
                 Ok(())
             }
+            Key::Char('D') => {
+                // update the last command state
+                self.last_insert = None;
+                self.last_command.clear();
+                self.last_command.push(key);
+                self.count = 0;
+                self.last_count = 0;
+
+                self.ed.delete_all_after_cursor()
+            }
             Key::Char('.') => {
                 // repeat the last command
                 self.count = match (self.count, self.last_count) {
@@ -1290,6 +1300,24 @@ mod tests {
             Char('.'),
         ]);
         assert_eq!(String::from(map), "ace");
+    }
+
+    #[test]
+    /// test delete until end of line
+    fn delete_until_end_shift_d() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('D'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "");
     }
 
     #[test]
