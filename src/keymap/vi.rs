@@ -79,14 +79,21 @@ impl<'a, W: Write> Vi<'a, W> {
 
     fn set_mode(&mut self, mode: Mode) {
         use self::Mode::*;
+        self.set_mode_preserve_last(mode);
+        if mode == Insert {
+            self.last_count = 0;
+            self.last_command.clear();
+        }
+    }
+
+    fn set_mode_preserve_last(&mut self, mode: Mode) {
+        use self::Mode::*;
 
         self.ed.no_eol = mode == Normal;
         self.movement_reset = mode != Insert;
         self.mode_stack.push(mode);
 
         if mode == Insert {
-            self.last_count = 0;
-            self.last_command.clear();
             self.ed.current_buffer_mut().start_undo_group();
         }
     }
@@ -302,6 +309,17 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.count = 0;
                 self.last_count = 0;
 
+                self.ed.delete_all_after_cursor()
+            }
+            Key::Char('C') => {
+                // update the last command state
+                self.last_insert = None;
+                self.last_command.clear();
+                self.last_command.push(key);
+                self.count = 0;
+                self.last_count = 0;
+
+                self.set_mode_preserve_last(Insert);
                 self.ed.delete_all_after_cursor()
             }
             Key::Char('.') => {
@@ -1318,6 +1336,49 @@ mod tests {
         ]);
         assert_eq!(map.ed.cursor(), 0);
         assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// test change until end of line
+    fn change_until_end_shift_c() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('C'),
+            Char('o'),
+            Char('k'),
+        ]);
+        assert_eq!(map.ed.cursor(), 2);
+        assert_eq!(String::from(map), "ok");
+    }
+
+    #[test]
+    /// test change until end of line
+    fn change_until_end_from_middle_shift_c() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('2'),
+            Char('l'),
+            Char('C'),
+            Char(' '),
+            Char('o'),
+            Char('k'),
+            Esc,
+        ]);
+        assert_eq!(String::from(map), "ch ok");
     }
 
     #[test]
