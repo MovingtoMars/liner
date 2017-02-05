@@ -11,6 +11,7 @@ enum Mode {
     Insert,
     Normal,
     Replace,
+    Delete(usize),
 }
 
 struct ModeStack(Vec<Mode>);
@@ -45,12 +46,25 @@ impl ModeStack {
     }
 }
 
+fn is_movement_key(key: Key) -> bool {
+    match key {
+        Key::Char('h') | Key::Char('l') | Key::Left | Key::Right |
+            Key::Backspace | Key::Char(' ') | Key::Home | Key::End |
+            Key::Char('$')
+        => true,
+        _ => false,
+    }
+}
+
 pub struct Vi<'a, W: Write> {
     ed: Editor<'a, W>,
     mode_stack: ModeStack,
+    current_command: Vec<Key>,
     last_command: Vec<Key>,
+    current_insert: Option<Key>,
     last_insert: Option<Key>,
     count: u32,
+    secondary_count: u32,
     last_count: u32,
     movement_reset: bool,
 }
@@ -63,10 +77,13 @@ impl<'a, W: Write> Vi<'a, W> {
         Vi {
             ed: ed,
             mode_stack: ModeStack::with_insert(),
+            current_command: Vec::new(),
             last_command: Vec::new(),
+            current_insert: None,
             // we start vi in insert mode
             last_insert: Some(Key::Char('i')),
             count: 0,
+            secondary_count: 0,
             last_count: 0,
             movement_reset: false,
         }
@@ -101,13 +118,31 @@ impl<'a, W: Write> Vi<'a, W> {
     fn pop_mode_after_movement(&mut self) -> io::Result<()> {
         use self::Mode::*;
 
+        let original_mode = self.mode_stack.pop();
+
         self.ed.no_eol = self.mode() == Mode::Normal;
         self.movement_reset = self.mode() != Mode::Insert;
 
-        // in normal mode, count goes back to 0 after movement
-        if self.mode_stack.pop() == Normal {
-            self.count = 0;
-        }
+        match original_mode {
+            Delete(start_pos) => {
+                // perform the delete operation
+                try!(self.ed.delete_until(start_pos));
+
+                // update the last state
+                mem::swap(&mut self.last_command, &mut self.current_command);
+                self.last_insert = self.current_insert;
+                self.last_count = self.count;
+
+                // reset our counts
+                self.count = 0;
+                self.secondary_count = 0;
+            }
+            // in normal mode, count goes back to 0 after movement
+            Normal => {
+                self.count = 0;
+            }
+            _ => {}
+        };
 
         Ok(())
     }
@@ -301,6 +336,27 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.set_mode(Mode::Replace);
                 Ok(())
             }
+            Key::Char('d') | Key::Char('c') => {
+                self.current_command.clear();
+
+                if key == Key::Char('d') {
+                    // handle special 'd' key stuff
+                    self.current_insert = None;
+                    self.current_command.push(key);
+                }
+                else {
+                    // handle special 'c' key stuff
+                    self.current_insert = Some(key);
+                    self.current_command.clear();
+                    self.set_mode(Insert);
+                }
+
+                let start_pos = self.ed.cursor();
+                self.set_mode(Mode::Delete(start_pos));
+                self.secondary_count = self.count;
+                self.count = 0;
+                Ok(())
+            }
             Key::Char('D') => {
                 // update the last command state
                 self.last_insert = None;
@@ -441,6 +497,58 @@ impl<'a, W: Write> Vi<'a, W> {
         self.count = 0;
         Ok(())
     }
+
+    fn handle_key_delete_or_change(&mut self, key: Key) -> io::Result<()> {
+        match (key, self.current_insert) {
+            // check if this is a movement key
+            (key, _) if is_movement_key(key) | (key == Key::Char('0') && self.count == 0) => {
+                // set count
+                self.count = match (self.count, self.secondary_count) {
+                    (0, 0) => 0,
+                    (_, 0) => self.count,
+                    (0, _) => self.secondary_count,
+                    _ => {
+                        // secondary_count * count
+                        self.secondary_count
+                            .saturating_mul(self.count)
+                    }
+                };
+
+                // update the last command state
+                self.current_command.push(key);
+
+                // execute movement
+                self.handle_key_normal(key)
+            }
+            // handle numeric keys
+            (Key::Char('0'...'9'), _) => {
+                self.handle_key_normal(key)
+            }
+            (Key::Char('c'), Some(Key::Char('c'))) | (Key::Char('d'), None) => {
+                // updating the last command buffer doesn't really make sense in this context.
+                // Repeating 'dd' will simply erase and already erased line. Any other commands
+                // will then become the new last command and the user will need to press 'dd' again
+                // to clear the line. The same largely applies to the 'cc' command. We update the
+                // last command here anyway ¯\_(ツ)_/¯
+                self.current_command.push(key);
+
+                // delete the whole line
+                self.count = 0;
+                self.secondary_count = 0;
+                try!(self.ed.move_cursor_to_start_of_line());
+                try!(self.ed.delete_all_after_cursor());
+
+                // return to the previous mode
+                self.pop_mode();
+                Ok(())
+            }
+            // not a delete or change command, back to normal mode
+            _ => {
+                self.normal_mode_abort();
+                Ok(())
+            }
+        }
+    }
 }
 
 impl<'a, W: Write> KeyMap<'a, W, Vi<'a, W>> for Vi<'a, W> {
@@ -449,6 +557,7 @@ impl<'a, W: Write> KeyMap<'a, W, Vi<'a, W>> for Vi<'a, W> {
             Mode::Normal => self.handle_key_normal(key),
             Mode::Insert => self.handle_key_insert(key),
             Mode::Replace => self.handle_key_replace(key),
+            Mode::Delete(_) => self.handle_key_delete_or_change(key),
         }
     }
 
@@ -1321,6 +1430,184 @@ mod tests {
     }
 
     #[test]
+    /// test deleting a line
+    fn delete_line() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('d'),
+            Char('d'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// test for normal mode after deleting a line
+    fn delete_line_normal() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('d'),
+            Char('d'),
+            Char('i'),
+            Char('n'),
+            Char('e'),
+            Char('w'),
+            Esc,
+        ]);
+        assert_eq!(map.ed.cursor(), 2);
+        assert_eq!(String::from(map), "new");
+    }
+
+    #[test]
+    /// test aborting a delete (and change)
+    fn delete_abort() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("don't delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('d'),
+            Esc,
+            Char('d'),
+            Char('c'),
+            Char('c'),
+            Char('d'),
+        ]);
+        assert_eq!(map.ed.cursor(), 11);
+        assert_eq!(String::from(map), "don't delete");
+    }
+
+    #[test]
+    /// test deleting a single char to the left
+    fn delete_char_left() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('d'),
+            Char('h'),
+        ]);
+        assert_eq!(map.ed.cursor(), 4);
+        assert_eq!(String::from(map), "delee");
+    }
+
+    #[test]
+    /// test deleting multiple chars to the left
+    fn delete_chars_left() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Char('d'),
+            Char('h'),
+        ]);
+        assert_eq!(map.ed.cursor(), 2);
+        assert_eq!(String::from(map), "dee");
+    }
+
+    #[test]
+    /// test deleting a single char to the right
+    fn delete_char_right() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('d'),
+            Char('l'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "elete");
+    }
+
+    #[test]
+    /// test deleting multiple chars to the right
+    fn delete_chars_right() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('3'),
+            Char('d'),
+            Char('l'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "ete");
+    }
+
+    #[test]
+    /// test repeat with delete
+    fn delete_and_repeat() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('d'),
+            Char('l'),
+            Char('.'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "lete");
+    }
+
+    #[test]
+    /// test delete until end of line
+    fn delete_until_end() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('d'),
+            Char('$'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
     /// test delete until end of line
     fn delete_until_end_shift_d() {
         let mut context = Context::new();
@@ -1336,6 +1623,222 @@ mod tests {
         ]);
         assert_eq!(map.ed.cursor(), 0);
         assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// test delete until start of line
+    fn delete_until_start() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('$'),
+            Char('d'),
+            Char('0'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "e");
+    }
+
+    #[test]
+    /// test a compound count with delete
+    fn delete_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('2'),
+            Char('d'),
+            Char('2'),
+            Char('l'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "te");
+    }
+
+    #[test]
+    /// test a compound count with delete and repeat
+    fn delete_with_count_and_repeat() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete delete").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('2'),
+            Char('d'),
+            Char('2'),
+            Char('l'),
+            Char('.'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "elete");
+    }
+
+    #[test]
+    /// test changing a line
+    fn change_line() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('c'),
+            Char('c'),
+            Char('d'),
+            Char('o'),
+            Char('n'),
+            Char('e'),
+        ]);
+        assert_eq!(map.ed.cursor(), 4);
+        assert_eq!(String::from(map), "done");
+    }
+
+    #[test]
+    /// test deleting a single char to the left
+    fn change_char_left() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('c'),
+            Char('h'),
+            Char('e'),
+            Esc,
+        ]);
+        assert_eq!(map.ed.cursor(), 4);
+        assert_eq!(String::from(map), "chanee");
+    }
+
+    #[test]
+    /// test deleting multiple chars to the left
+    fn change_chars_left() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Char('c'),
+            Char('h'),
+            Char('e'),
+        ]);
+        assert_eq!(map.ed.cursor(), 3);
+        assert_eq!(String::from(map), "chee");
+    }
+
+    #[test]
+    /// test deleting a single char to the right
+    fn change_char_right() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('c'),
+            Char('l'),
+            Char('s'),
+        ]);
+        assert_eq!(map.ed.cursor(), 1);
+        assert_eq!(String::from(map), "shange");
+    }
+
+    #[test]
+    /// test changing multiple chars to the right
+    fn change_chars_right() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('3'),
+            Char('c'),
+            Char('l'),
+            Char('s'),
+            Char('t'),
+            Char('r'),
+            Char('a'),
+            Esc,
+        ]);
+        assert_eq!(map.ed.cursor(), 3);
+        assert_eq!(String::from(map), "strange");
+    }
+
+    #[test]
+    /// test repeat with change
+    fn change_and_repeat() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('c'),
+            Char('l'),
+            Char('s'),
+            Esc,
+            Char('l'),
+            Char('.'),
+            Char('l'),
+            Char('.'),
+        ]);
+        assert_eq!(map.ed.cursor(), 2);
+        assert_eq!(String::from(map), "sssnge");
+    }
+
+    #[test]
+    /// test change until end of line
+    fn change_until_end() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('c'),
+            Char('$'),
+            Char('o'),
+            Char('k'),
+            Esc,
+        ]);
+        assert_eq!(map.ed.cursor(), 1);
+        assert_eq!(String::from(map), "ok");
     }
 
     #[test]
@@ -1379,6 +1882,82 @@ mod tests {
             Esc,
         ]);
         assert_eq!(String::from(map), "ch ok");
+    }
+
+    #[test]
+    /// test change until start of line
+    fn change_until_start() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('$'),
+            Char('c'),
+            Char('0'),
+            Char('s'),
+            Char('t'),
+            Char('r'),
+            Char('a'),
+            Char('n'),
+            Char('g'),
+        ]);
+        assert_eq!(map.ed.cursor(), 6);
+        assert_eq!(String::from(map), "strange");
+    }
+
+    #[test]
+    /// test a compound count with change
+    fn change_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('2'),
+            Char('c'),
+            Char('2'),
+            Char('l'),
+            Char('s'),
+            Char('t'),
+            Char('r'),
+            Char('a'),
+            Char('n'),
+            Esc,
+        ]);
+        assert_eq!(map.ed.cursor(), 4);
+        assert_eq!(String::from(map), "strange");
+    }
+
+    #[test]
+    /// test a compound count with change and repeat
+    fn change_with_count_and_repeat() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change change").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('2'),
+            Char('c'),
+            Char('2'),
+            Char('l'),
+            Char('o'),
+            Esc,
+            Char('.'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "ochange");
     }
 
     #[test]
