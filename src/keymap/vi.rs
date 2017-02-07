@@ -1,3 +1,4 @@
+use std::{mem, cmp};
 use std::io::{self, Write};
 use termion::event::Key;
 
@@ -41,6 +42,11 @@ impl ModeStack {
 pub struct Vi<'a, W: Write> {
     ed: Editor<'a, W>,
     mode_stack: ModeStack,
+    last_command: Vec<Key>,
+    last_insert: Option<Key>,
+    count: u32,
+    last_count: u32,
+    movement_reset: bool,
 }
 
 impl<'a, W: Write> Vi<'a, W> {
@@ -48,6 +54,12 @@ impl<'a, W: Write> Vi<'a, W> {
         Vi {
             ed: ed,
             mode_stack: ModeStack::with_insert(),
+            last_command: Vec::new(),
+            // we start vi in insert mode
+            last_insert: Some(Key::Char('i')),
+            count: 0,
+            last_count: 0,
+            movement_reset: false,
         }
     }
 
@@ -57,13 +69,80 @@ impl<'a, W: Write> Vi<'a, W> {
     }
 
     fn set_mode(&mut self, mode: Mode) {
-        self.ed.no_eol = mode == Mode::Normal;
+        use self::Mode::*;
+
+        self.ed.no_eol = mode == Normal;
+        self.movement_reset = mode != Insert;
         self.mode_stack.push(mode);
+
+        if mode == Insert {
+            self.last_count = 0;
+            self.last_command.clear();
+        }
+    }
+
+    fn pop_mode_after_movement(&mut self) -> io::Result<()> {
+        use self::Mode::*;
+
+        self.ed.no_eol = self.mode() == Mode::Normal;
+        self.movement_reset = self.mode() != Mode::Insert;
+
+        // in normal mode, count goes back to 0 after movement
+        if self.mode_stack.pop() == Normal {
+            self.count = 0;
+        }
+
+        Ok(())
     }
 
     fn pop_mode(&mut self) {
+        use self::Mode::*;
+
         self.mode_stack.pop();
-        self.ed.no_eol = self.mode() == Mode::Normal;
+        self.ed.no_eol = self.mode() == Normal;
+        self.movement_reset = self.mode() != Insert;
+    }
+
+    /// When doing a move, 0 should behave the same as 1 as far as the count goes.
+    fn move_count(&mut self) -> usize {
+        match self.count {
+            0 => 1,
+            _ => self.count as usize,
+        }
+    }
+
+    /// Get the current count or the number of remaining chars in the buffer.
+    fn move_count_left(&mut self) -> usize {
+        cmp::min(self.ed.cursor(), self.move_count())
+    }
+
+    /// Get the current count or the number of remaining chars in the buffer.
+    fn move_count_right(&mut self) -> usize {
+        cmp::min(self.ed.current_buffer().num_chars() - self.ed.cursor(), self.move_count())
+    }
+
+    fn repeat(&mut self) -> io::Result<()> {
+        self.last_count = self.count;
+        let keys = mem::replace(&mut self.last_command, Vec::new());
+
+        if let Some(insert_key) = self.last_insert {
+            // enter insert mode if necessary
+            try!(self.handle_key_core(insert_key));
+        }
+
+        for k in keys.iter() {
+            try!(self.handle_key_core(*k));
+        }
+
+        if self.last_insert.is_some() {
+            // leave insert mode
+            try!(self.handle_key_core(Key::Esc));
+        }
+
+        // restore the last command
+        mem::replace(&mut self.last_command, keys);
+
+        Ok(())
     }
 
     fn handle_key_common(&mut self, key: Key) -> io::Result<()> {
@@ -85,12 +164,49 @@ impl<'a, W: Write> Vi<'a, W> {
     fn handle_key_insert(&mut self, key: Key) -> io::Result<()> {
         match key {
             Key::Esc => {
+                // perform any repeats
+                if self.count > 0 {
+                    self.last_count = self.count;
+                    for _ in 1..self.count {
+                        let keys = mem::replace(&mut self.last_command, Vec::new());
+                        for k in keys.into_iter() {
+                            try!(self.handle_key_core(k));
+                        }
+                    }
+                    self.count = 0;
+                }
                 // cursor moves to the left when switching from insert to normal mode
                 try!(self.ed.move_cursor_left(1));
                 self.pop_mode();
                 Ok(())
             }
-            Key::Char(c) => self.ed.insert_after_cursor(c),
+            Key::Char(c) => {
+                if self.movement_reset {
+                    self.last_command.clear();
+                    self.movement_reset = false;
+                    // vim behaves as if this was 'i'
+                    self.last_insert = Some(Key::Char('i'));
+                }
+                self.last_command.push(key);
+                self.ed.insert_after_cursor(c)
+            }
+            // delete and backspace need to be included in the command buffer
+            Key::Backspace | Key::Delete => {
+                if self.movement_reset {
+                    self.last_command.clear();
+                    self.movement_reset = false;
+                    // vim behaves as if this was 'i'
+                    self.last_insert = Some(Key::Char('i'));
+                }
+                self.last_command.push(key);
+                self.handle_key_common(key)
+            }
+            // if this is a movement while in insert mode, reset the repeat count
+            Key::Left | Key::Right | Key::Home | Key::End | Key::Up | Key::Down => {
+                self.count = 0;
+                self.movement_reset = true;
+                self.handle_key_common(key)
+            }
             _ => self.handle_key_common(key),
         }
     }
@@ -99,32 +215,77 @@ impl<'a, W: Write> Vi<'a, W> {
         use self::Mode::*;
 
         match key {
+            Key::Esc => {
+                self.count = 0;
+                Ok(())
+            }
             Key::Char('i') => {
+                self.last_insert = Some(key);
                 self.set_mode(Insert);
                 Ok(())
             }
             Key::Char('a') => {
+                self.last_insert = Some(key);
                 self.set_mode(Insert);
                 self.ed.move_cursor_right(1)
             }
             Key::Char('A') => {
+                self.last_insert = Some(key);
                 self.set_mode(Insert);
                 self.ed.move_cursor_to_end_of_line()
             }
             Key::Char('I') => {
+                self.last_insert = Some(key);
                 self.set_mode(Insert);
                 self.ed.move_cursor_to_start_of_line()
             }
+            Key::Char('.') => {
+                // repeat the last command
+                self.count = match (self.count, self.last_count) {
+                    // if both count and last_count are zero, use 1
+                    (0, 0) => 1,
+                    // if count is zero, use last_count
+                    (0, _) => self.last_count,
+                    // otherwise use count
+                    (_, _) => self.count,
+                };
+                self.repeat()
+            }
             Key::Char('h') | Key::Left | Key::Backspace => {
-                self.ed.move_cursor_left(1)
+                let count = self.move_count_left();
+                try!(self.ed.move_cursor_left(count));
+                self.pop_mode_after_movement()
             }
             Key::Char('l') | Key::Right | Key::Char(' ') => {
-                self.ed.move_cursor_right(1)
+                let count = self.move_count_right();
+                try!(self.ed.move_cursor_right(count));
+                self.pop_mode_after_movement()
             }
-            Key::Char('k') => self.ed.move_up(),
-            Key::Char('j') => self.ed.move_down(),
-            Key::Char('0') => self.ed.move_cursor_to_start_of_line(),
-            Key::Char('$') => self.ed.move_cursor_to_end_of_line(),
+            Key::Char('k') | Key::Up =>  {
+                try!(self.ed.move_up());
+                self.pop_mode_after_movement()
+            }
+            Key::Char('j') | Key::Down => {
+                try!(self.ed.move_down());
+                self.pop_mode_after_movement()
+            }
+            // if count is 0, 0 should move to start of line
+            Key::Char('0') if self.count == 0 => {
+                try!(self.ed.move_cursor_to_start_of_line());
+                self.pop_mode_after_movement()
+            }
+            Key::Char(i @ '0'...'9') => {
+                let i = i.to_digit(10).unwrap();
+                // count = count * 10 + i
+                self.count = self.count
+                    .saturating_mul(10)
+                    .saturating_add(i);
+                Ok(())
+            }
+            Key::Char('$') => {
+                try!(self.ed.move_cursor_to_end_of_line());
+                self.pop_mode_after_movement()
+            }
             _ => self.handle_key_common(key),
         }
     }
@@ -341,5 +502,371 @@ mod tests {
         // in normal mode, make sure we don't end up past the last char
         simulate_keys!(map, [Esc, Up]);
         assert_eq!(map.ed.cursor(), 6);
+    }
+
+    #[test]
+    /// make sure our count is accurate
+    fn vi_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+        ]);
+        assert_eq!(map.count, 0);
+
+        simulate_keys!(map, [
+            Char('1'),
+        ]);
+        assert_eq!(map.count, 1);
+
+        simulate_keys!(map, [
+            Char('1'),
+        ]);
+        assert_eq!(map.count, 11);
+
+        // switching to insert mode and back to edit mode should reset the count
+        simulate_keys!(map, [
+            Char('i'),
+            Esc,
+        ]);
+        assert_eq!(map.count, 0);
+
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// make sure large counts don't overflow
+    fn vi_count_overflow() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        // make sure large counts don't overflow our u32
+        simulate_keys!(map, [
+            Esc,
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+            Char('9'), Char('9'), Char('9'), Char('9'), Char('9'),
+        ]);
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// make sure large counts ending in zero don't overflow
+    fn vi_count_overflow_zero() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        // make sure large counts don't overflow our u32
+        simulate_keys!(map, [
+            Esc,
+            Char('1'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+            Char('0'), Char('0'), Char('0'), Char('0'), Char('0'),
+        ]);
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// Esc should cancel the count
+    fn vi_count_cancel() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('1'),
+            Char('0'),
+            Esc,
+        ]);
+        assert_eq!(map.count, 0);
+        assert_eq!(String::from(map), "");
+    }
+
+    #[test]
+    /// test insert with a count
+    fn vi_count_simple() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Char('i'),
+            Char('t'),
+            Char('h'),
+            Char('i'),
+            Char('s'),
+            Esc,
+        ]);
+        assert_eq!(String::from(map), "thisthisthis");
+    }
+
+    #[test]
+    /// test dot command
+    fn vi_dot_command() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Char('i'),
+            Char('f'),
+            Esc,
+            Char('.'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "iiifff");
+    }
+
+    #[test]
+    /// test dot command with repeat
+    fn vi_dot_command_repeat() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Char('i'),
+            Char('f'),
+            Esc,
+            Char('3'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "iifififf");
+    }
+
+    #[test]
+    /// test dot command with repeat
+    fn vi_dot_command_repeat_multiple() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Char('i'),
+            Char('f'),
+            Esc,
+            Char('3'),
+            Char('.'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "iififiifififff");
+    }
+
+    #[test]
+    /// test dot command with append
+    fn vi_dot_command_append() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('a'),
+            Char('i'),
+            Char('f'),
+            Esc,
+            Char('.'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "ififif");
+    }
+
+    #[test]
+    /// test dot command with append and repeat
+    fn vi_dot_command_append_repeat() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('a'),
+            Char('i'),
+            Char('f'),
+            Esc,
+            Char('3'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "ifififif");
+    }
+
+    #[test]
+    /// test dot command with movement
+    fn vi_dot_command_movement() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('a'),
+            Char('d'),
+            Char('t'),
+            Char(' '),
+            Left,
+            Left,
+            Char('a'),
+            Esc,
+            Right,
+            Right,
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "data ");
+    }
+
+    #[test]
+    /// test move_count function
+    fn move_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        assert_eq!(map.move_count(), 1);
+        map.count = 1;
+        assert_eq!(map.move_count(), 1);
+        map.count = 99;
+        assert_eq!(map.move_count(), 99);
+    }
+
+    #[test]
+    /// make sure the count is reset if movement occurs
+    fn vi_count_movement_reset() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Char('i'),
+            Char('t'),
+            Char('h'),
+            Char('i'),
+            Char('s'),
+            Left,
+            Esc,
+        ]);
+        assert_eq!(String::from(map), "this");
+    }
+
+    #[test]
+    /// test movement with counts
+    fn movement_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("right").unwrap();
+        assert_eq!(map.ed.cursor(), 5);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Left,
+        ]);
+
+        assert_eq!(map.ed.cursor(), 1);
+    }
+
+    #[test]
+    /// test movement with counts, then insert (count should be reset before insert)
+    fn movement_with_count_then_insert() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("right").unwrap();
+        assert_eq!(map.ed.cursor(), 5);
+
+        simulate_keys!(map, [
+            Esc,
+            Char('3'),
+            Left,
+            Char('i'),
+            Char(' '),
+            Esc,
+        ]);
+        assert_eq!(String::from(map), "r ight");
+    }
+
+    #[test]
+    /// verify our move count
+    fn move_count_right() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+        assert_eq!(map.move_count_right(), 0);
+        map.count = 10;
+        assert_eq!(map.move_count_right(), 0);
+
+        map.count = 0;
+        simulate_keys!(map, [
+            Esc,
+            Left,
+        ]);
+        assert_eq!(map.move_count_right(), 1);
+    }
+
+    #[test]
+    /// verify our move count
+    fn move_count_left() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("replace").unwrap();
+        assert_eq!(map.ed.cursor(), 7);
+        assert_eq!(map.move_count_left(), 1);
+        map.count = 10;
+        assert_eq!(map.move_count_left(), 7);
+
+        map.count = 0;
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+        ]);
+        assert_eq!(map.move_count_left(), 0);
     }
 }
