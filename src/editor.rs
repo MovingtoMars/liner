@@ -80,6 +80,10 @@ pub struct Editor<'a, W: Write> {
 
     // If this is true, on the next tab we print the completion list.
     show_completions_hint: bool,
+
+    // if set, the cursor will not be allow to move one past the end of the line, this is necessary
+    // for Vi's normal mode.
+    pub no_eol: bool,
 }
 
 macro_rules! cur_buf_mut {
@@ -123,6 +127,7 @@ impl<'a, W: Write> Editor<'a, W> {
             show_completions_hint: false,
             prompt_width: prompt_width,
             term_cursor_line: 1,
+            no_eol: false,
         };
 
         try!(ed.print_current_buffer(true));
@@ -531,9 +536,16 @@ impl<'a, W: Write> Editor<'a, W> {
             }
         }
 
+        // can't move past the last character in vi normal mode
+        if self.no_eol {
+            if self.cursor >= 1 && self.cursor == buf_num_chars {
+                self.cursor -= 1;
+            }
+        }
+
         self.term_cursor_line = (self.prompt_width + buf.range_width(0, self.cursor) + w) / w;
 
-        if !move_cursor_to_end_of_line {
+        if !move_cursor_to_end_of_line || self.no_eol {
             // The term cursor is now on the bottom line. We may need to move the term cursor up
             // to the line where the true cursor is.
             let cursor_line_diff = new_num_lines as isize - self.term_cursor_line as isize;

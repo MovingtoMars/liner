@@ -19,5 +19,5 @@ name = "liner"
 name = "liner_test"
 
 [dependencies]
-termion = "1.0"
+termion = "1.1.2"
 unicode-width = "0.1.*"

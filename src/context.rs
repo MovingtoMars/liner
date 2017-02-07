@@ -39,10 +39,18 @@ pub fn get_buffer_words(buf: &Buffer) -> Vec<(usize, usize)> {
     res
 }
 
+/// The key bindings to use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyBindings {
+    Vi,
+    Emacs,
+}
+
 pub struct Context {
     pub history: History,
     pub completer: Option<Box<Completer>>,
     pub word_fn: Box<Fn(&Buffer) -> Vec<(usize, usize)>>,
+    pub key_bindings: KeyBindings,
 }
 
 impl Context {
@@ -51,6 +59,7 @@ impl Context {
             history: History::new(),
             completer: None,
             word_fn: Box::new(get_buffer_words),
+            key_bindings: KeyBindings::Emacs,
         }
     }
 
@@ -65,7 +74,10 @@ impl Context {
         let res = {
             let stdout = stdout().into_raw_mode().unwrap();
             let ed = try!(Editor::new(stdout, prompt.into(), self));
-            Self::handle_keys(keymap::Emacs::new(ed), handler)
+            match self.key_bindings {
+                KeyBindings::Emacs => Self::handle_keys(keymap::Emacs::new(ed), handler),
+                KeyBindings::Vi => Self::handle_keys(keymap::Vi::new(ed), handler),
+            }
         };
 
         self.revert_all_history();

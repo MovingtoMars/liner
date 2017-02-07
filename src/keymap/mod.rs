@@ -32,5 +32,8 @@ pub trait KeyMap<'a, W: Write, T>: From<T> {
     }
 }
 
+pub mod vi;
+pub use vi::Vi;
+
 pub mod emacs;
 pub use emacs::Emacs;
