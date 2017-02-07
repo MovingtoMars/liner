@@ -500,6 +500,12 @@ impl<'a, W: Write> Editor<'a, W> {
         cur_buf!(self)
     }
 
+    ///  Returns a mutable reference to the current buffer being edited.
+    /// This may be the new buffer or a buffer from history.
+    pub fn current_buffer_mut(&mut self) -> &mut Buffer {
+        cur_buf_mut!(self)
+    }
+
     /// Deletes the displayed prompt and buffer, replacing them with the current prompt and buffer
     pub fn print_current_buffer(&mut self, move_cursor_to_end_of_line: bool) -> io::Result<()> {
         let buf = cur_buf!(self);

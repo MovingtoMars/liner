@@ -7,6 +7,8 @@ use std::fmt::{self, Write as FmtWrite};
 pub enum Action {
     Insert { start: usize, text: Vec<char> },
     Remove { start: usize, text: Vec<char> },
+    StartGroup,
+    EndGroup,
 }
 
 impl Action {
@@ -16,6 +18,7 @@ impl Action {
             Action::Remove { start, ref text } => {
                 buf.remove_raw(start, start + text.len());
             }
+            Action::StartGroup | Action::EndGroup => {}
         }
     }
 
@@ -25,6 +28,7 @@ impl Action {
                 buf.remove_raw(start, start + text.len());
             }
             Action::Remove { start, ref text } => buf.insert_raw(start, &text[..]),
+            Action::StartGroup | Action::EndGroup => {}
         }
     }
 }
@@ -87,26 +91,66 @@ impl Buffer {
         self.undone_actions.clear();
     }
 
+    pub fn start_undo_group(&mut self) {
+        self.actions.push(Action::StartGroup);
+    }
+
+    pub fn end_undo_group(&mut self) {
+        self.actions.push(Action::EndGroup);
+    }
+
     pub fn undo(&mut self) -> bool {
-        match self.actions.pop() {
-            None => false,
-            Some(act) => {
-                act.undo(self);
-                self.undone_actions.push(act);
-                true
+        use Action::*;
+
+        let did = !self.actions.is_empty();
+        let mut group_nest = 0;
+        let mut group_count = 0;
+        while let Some(act) = self.actions.pop() {
+            act.undo(self);
+            self.undone_actions.push(act.clone());
+            match act {
+                EndGroup => {
+                    group_nest += 1;
+                    group_count = 0;
+                }
+                StartGroup => group_nest -= 1,
+                // count the actions in this group so we can ignore empty groups below
+                _ => group_count += 1,
+            }
+
+            // if we aren't in a group, and the last group wasn't empty
+            if group_nest == 0 && group_count > 0 {
+                break;
             }
         }
+        did
     }
 
     pub fn redo(&mut self) -> bool {
-        match self.undone_actions.pop() {
-            None => false,
-            Some(act) => {
-                act.do_on(self);
-                self.actions.push(act);
-                true
+        use Action::*;
+
+        let did = !self.undone_actions.is_empty();
+        let mut group_nest = 0;
+        let mut group_count = 0;
+        while let Some(act) = self.undone_actions.pop() {
+            act.do_on(self);
+            self.actions.push(act.clone());
+            match act {
+                StartGroup => {
+                    group_nest += 1;
+                    group_count = 0;
+                }
+                EndGroup => group_nest -= 1,
+                // count the actions in this group so we can ignore empty groups below
+                _ => group_count += 1,
+            }
+
+            // if we aren't in a group, and the last group wasn't empty
+            if group_nest == 0 && group_count > 0 {
+                break;
             }
         }
+        did
     }
 
     pub fn revert(&mut self) -> bool {
@@ -287,5 +331,63 @@ mod tests {
         buf.truncate(3);
         buf.undo();
         assert_eq!(String::from(buf), "abcdefg");
+    }
+
+    #[test]
+    fn test_undo_group() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        buf.start_undo_group();
+        buf.remove(0, 1);
+        buf.remove(0, 1);
+        buf.remove(0, 1);
+        buf.end_undo_group();
+        assert_eq!(buf.undo(), true);
+        assert_eq!(String::from(buf), "abcdefg");
+    }
+
+    #[test]
+    fn test_redo_group() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        buf.start_undo_group();
+        buf.remove(0, 1);
+        buf.remove(0, 1);
+        buf.remove(0, 1);
+        buf.end_undo_group();
+        assert_eq!(buf.undo(), true);
+        assert_eq!(buf.redo(), true);
+        assert_eq!(String::from(buf), "defg");
+    }
+
+    #[test]
+    fn test_nested_undo_group() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        buf.start_undo_group();
+        buf.remove(0, 1);
+        buf.start_undo_group();
+        buf.remove(0, 1);
+        buf.end_undo_group();
+        buf.remove(0, 1);
+        buf.end_undo_group();
+        assert_eq!(buf.undo(), true);
+        assert_eq!(String::from(buf), "abcdefg");
+    }
+
+    #[test]
+    fn test_nested_redo_group() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        buf.start_undo_group();
+        buf.remove(0, 1);
+        buf.start_undo_group();
+        buf.remove(0, 1);
+        buf.end_undo_group();
+        buf.remove(0, 1);
+        buf.end_undo_group();
+        assert_eq!(buf.undo(), true);
+        assert_eq!(buf.redo(), true);
+        assert_eq!(String::from(buf), "defg");
     }
 }
