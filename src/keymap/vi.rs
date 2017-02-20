@@ -5,6 +5,12 @@ use termion::event::Key;
 use KeyMap;
 use Editor;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MoveType {
+    Inclusive,
+    Exclusive,
+}
+
 /// The editing mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -304,8 +310,9 @@ impl<'a, W: Write> Vi<'a, W> {
         }
     }
 
-    fn pop_mode_after_movement(&mut self) -> io::Result<()> {
+    fn pop_mode_after_movement(&mut self, move_type: MoveType) -> io::Result<()> {
         use self::Mode::*;
+        use self::MoveType::*;
 
         let original_mode = self.mode_stack.pop();
 
@@ -315,7 +322,10 @@ impl<'a, W: Write> Vi<'a, W> {
         match original_mode {
             Delete(start_pos) => {
                 // perform the delete operation
-                try!(self.ed.delete_until(start_pos));
+                match move_type {
+                    Exclusive => try!(self.ed.delete_until(start_pos)),
+                    Inclusive => try!(self.ed.delete_until_inclusive(start_pos)),
+                }
 
                 // update the last state
                 mem::swap(&mut self.last_command, &mut self.current_command);
@@ -486,6 +496,7 @@ impl<'a, W: Write> Vi<'a, W> {
 
     fn handle_key_normal(&mut self, key: Key) -> io::Result<()> {
         use self::Mode::*;
+        use self::MoveType::*;
 
         match key {
             Key::Esc => {
@@ -582,55 +593,55 @@ impl<'a, W: Write> Vi<'a, W> {
             Key::Char('h') | Key::Left | Key::Backspace => {
                 let count = self.move_count_left();
                 try!(self.ed.move_cursor_left(count));
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('l') | Key::Right | Key::Char(' ') => {
                 let count = self.move_count_right();
                 try!(self.ed.move_cursor_right(count));
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('k') | Key::Up =>  {
                 try!(self.ed.move_up());
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('j') | Key::Down => {
                 try!(self.ed.move_down());
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('w') => {
                 let count = self.move_count();
                 try!(move_word(&mut self.ed, count));
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('W') => {
                 let count = self.move_count();
                 try!(move_word_ws(&mut self.ed, count));
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('e') => {
                 let count = self.move_count();
                 try!(move_to_end_of_word(&mut self.ed, count));
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('E') => {
                 let count = self.move_count();
                 try!(move_to_end_of_word_ws(&mut self.ed, count));
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('b') => {
                 let count = self.move_count();
                 try!(move_word_back(&mut self.ed, count));
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('B') => {
                 let count = self.move_count();
                 try!(move_word_ws_back(&mut self.ed, count));
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             // if count is 0, 0 should move to start of line
             Key::Char('0') if self.count == 0 => {
                 try!(self.ed.move_cursor_to_start_of_line());
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             Key::Char(i @ '0'...'9') => {
                 let i = i.to_digit(10).unwrap();
@@ -642,7 +653,7 @@ impl<'a, W: Write> Vi<'a, W> {
             }
             Key::Char('$') => {
                 try!(self.ed.move_cursor_to_end_of_line());
-                self.pop_mode_after_movement()
+                self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('x') | Key::Delete => {
                 // update the last command state
