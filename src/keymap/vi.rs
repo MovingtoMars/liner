@@ -252,6 +252,30 @@ fn vi_move_word_end<W: Write>(ed: &mut Editor<W>, move_mode: ViMoveMode, directi
     ed.move_cursor_to(cursor)
 }
 
+fn find_char(buf: &::buffer::Buffer, start: usize, ch: char, count: usize) -> Option<usize> {
+    assert!(count > 0);
+    buf.chars()
+        .enumerate()
+        .skip(start)
+        .filter(|&(_, &c)| c == ch)
+        .skip(count - 1)
+        .next()
+        .map(|(i, _)| i)
+}
+
+fn find_char_rev(buf: &::buffer::Buffer, start: usize, ch: char, count: usize) -> Option<usize> {
+    assert!(count > 0);
+    let rstart = buf.num_chars() - start;
+    buf.chars()
+        .enumerate()
+        .rev()
+        .skip(rstart)
+        .filter(|&(_, &c)| c == ch)
+        .skip(count - 1)
+        .next()
+        .map(|(i, _)| i)
+}
+
 pub struct Vi<'a, W: Write> {
     ed: Editor<'a, W>,
     mode_stack: ModeStack,
@@ -2711,6 +2735,86 @@ mod tests {
             Char('.'),
         ]);
         assert_eq!(String::from(map), "words words words");
+    }
+
+    #[test]
+    /// test find_char
+    fn test_find_char() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("abcdefg").unwrap();
+        assert_eq!(super::find_char(ed.current_buffer(), 0, 'd', 1), Some(3));
+    }
+
+    #[test]
+    /// test find_char with non-zero start
+    fn test_find_char_with_start() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("abcabc").unwrap();
+        assert_eq!(super::find_char(ed.current_buffer(), 1, 'a', 1), Some(3));
+    }
+
+    #[test]
+    /// test find_char with count
+    fn test_find_char_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("abcabc").unwrap();
+        assert_eq!(super::find_char(ed.current_buffer(), 0, 'a', 2), Some(3));
+    }
+
+    #[test]
+    /// test find_char not found
+    fn test_find_char_not_found() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("abcdefg").unwrap();
+        assert_eq!(super::find_char(ed.current_buffer(), 0, 'z', 1), None);
+    }
+
+    #[test]
+    /// test find_char_rev
+    fn test_find_char_rev() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("abcdefg").unwrap();
+        assert_eq!(super::find_char_rev(ed.current_buffer(), 6, 'd', 1), Some(3));
+    }
+
+    #[test]
+    /// test find_char_rev with non-zero start
+    fn test_find_char_rev_with_start() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("abcabc").unwrap();
+        assert_eq!(super::find_char_rev(ed.current_buffer(), 5, 'c', 1), Some(2));
+    }
+
+    #[test]
+    /// test find_char_rev with count
+    fn test_find_char_rev_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("abcabc").unwrap();
+        assert_eq!(super::find_char_rev(ed.current_buffer(), 6, 'c', 2), Some(2));
+    }
+
+    #[test]
+    /// test find_char_rev not found
+    fn test_find_char_rev_not_found() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("abcdefg").unwrap();
+        assert_eq!(super::find_char_rev(ed.current_buffer(), 6, 'z', 1), None);
     }
 
     #[test]
