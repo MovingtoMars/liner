@@ -2369,6 +2369,25 @@ mod tests {
     }
 
     #[test]
+    /// test delete word
+    fn delete_word() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("delete some words").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('d'),
+            Char('w'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "some words");
+    }
+
+    #[test]
     /// test changing a line
     fn change_line() {
         let mut context = Context::new();
@@ -2642,6 +2661,59 @@ mod tests {
     }
 
     #[test]
+    /// test change word
+    fn change_word() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change some words").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('c'),
+            Char('w'),
+            Char('t'),
+            Char('w'),
+            Char('e'),
+            Char('a'),
+            Char('k'),
+            Char(' '),
+        ]);
+        assert_eq!(String::from(map), "tweak some words");
+    }
+
+    #[test]
+    /// make sure the count is properly reset
+    fn test_count_reset_around_insert_and_delete() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("these are some words").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('d'),
+            Char('3'),
+            Char('w'),
+            Char('i'),
+            Char('w'),
+            Char('o'),
+            Char('r'),
+            Char('d'),
+            Char('s'),
+            Char(' '),
+            Esc,
+            Char('l'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "words words words");
+    }
+
+    #[test]
     /// undo with counts
     fn test_undo_with_counts() {
         let mut context = Context::new();
@@ -2682,6 +2754,31 @@ mod tests {
             Ctrl('r'),
         ]);
         assert_eq!(String::from(map), "abcde");
+    }
+
+    #[test]
+    /// test change word with 'gE'
+    fn change_word_ge_ws() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("change some words").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('c'),
+            Char('g'),
+            Char('E'),
+            Char('e'),
+            Char('t'),
+            Char('h'),
+            Char('i'),
+            Char('n'),
+            Char('g'),
+            Esc,
+        ]);
+        assert_eq!(String::from(map), "change something");
     }
 
     #[test]
