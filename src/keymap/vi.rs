@@ -6,6 +6,16 @@ use KeyMap;
 use Editor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CharMovement {
+    RightUntil,
+    RightAt,
+    LeftUntil,
+    LeftAt,
+    Repeat,
+    ReverseRepeat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MoveType {
     Inclusive,
     Exclusive,
@@ -18,6 +28,7 @@ enum Mode {
     Normal,
     Replace,
     Delete(usize),
+    MoveToChar(CharMovement),
     G,
 }
 
@@ -59,7 +70,9 @@ fn is_movement_key(key: Key) -> bool {
             Key::Char('w') | Key::Char('W') | Key::Char('b') | Key::Char('B') |
             Key::Char('e') | Key::Char('E') | Key::Char('g') |
             Key::Backspace | Key::Char(' ') | Key::Home | Key::End |
-            Key::Char('$')
+            Key::Char('$') |
+            Key::Char('t') | Key::Char('f') | Key::Char('T') | Key::Char('F') |
+            Key::Char(';') | Key::Char(',')
         => true,
         _ => false,
     }
@@ -287,6 +300,7 @@ pub struct Vi<'a, W: Write> {
     secondary_count: u32,
     last_count: u32,
     movement_reset: bool,
+    last_char_movement: Option<(char, CharMovement)>,
 }
 
 impl<'a, W: Write> Vi<'a, W> {
@@ -306,6 +320,7 @@ impl<'a, W: Write> Vi<'a, W> {
             secondary_count: 0,
             last_count: 0,
             movement_reset: false,
+            last_char_movement: None,
         }
     }
 
@@ -530,6 +545,7 @@ impl<'a, W: Write> Vi<'a, W> {
 
     fn handle_key_normal(&mut self, key: Key) -> io::Result<()> {
         use self::Mode::*;
+        use self::CharMovement::*;
         use self::MoveType::*;
 
         match key {
@@ -642,6 +658,24 @@ impl<'a, W: Write> Vi<'a, W> {
                 try!(self.ed.move_down());
                 self.pop_mode_after_movement(Exclusive)
             }
+            Key::Char('t') => {
+                self.set_mode(Mode::MoveToChar(RightUntil));
+                Ok(())
+            }
+            Key::Char('T') => {
+                self.set_mode(Mode::MoveToChar(LeftUntil));
+                Ok(())
+            }
+            Key::Char('f') => {
+                self.set_mode(Mode::MoveToChar(RightAt));
+                Ok(())
+            }
+            Key::Char('F') => {
+                self.set_mode(Mode::MoveToChar(LeftAt));
+                Ok(())
+            }
+            Key::Char(';') => self.handle_key_move_to_char(key, Repeat),
+            Key::Char(',') => self.handle_key_move_to_char(key, ReverseRepeat),
             Key::Char('w') => {
                 let count = self.move_count();
                 try!(move_word(&mut self.ed, count));
@@ -818,6 +852,80 @@ impl<'a, W: Write> Vi<'a, W> {
         }
     }
 
+    fn handle_key_move_to_char(&mut self, key: Key, movement: CharMovement) -> io::Result<()> {
+        use self::CharMovement::*;
+        use self::MoveType::*;
+
+        let count = self.move_count();
+        self.count = 0;
+
+        let (key, movement) = match (key, movement, self.last_char_movement) {
+            // repeat the last movement
+            (_, Repeat, Some((c, last_movement))) => (Key::Char(c), last_movement),
+            // repeat the last movement in the opposite direction
+            (_, ReverseRepeat, Some((c, LeftUntil))) => (Key::Char(c), RightUntil),
+            (_, ReverseRepeat, Some((c, RightUntil))) => (Key::Char(c), LeftUntil),
+            (_, ReverseRepeat, Some((c, LeftAt))) => (Key::Char(c), RightAt),
+            (_, ReverseRepeat, Some((c, RightAt))) => (Key::Char(c), LeftAt),
+            // pass valid keys through as is
+            (Key::Char(c), _, _) => {
+                // store last command info
+                self.last_char_movement = Some((c, movement));
+                self.current_command.push(key);
+                (key, movement)
+            }
+            // all other combinations are invalid, abort. This includes repeats with no
+            // last_char_movement stored, and non char key presses.
+            _ => {
+                self.normal_mode_abort();
+                return Ok(());
+            }
+        };
+
+        match key {
+            Key::Char(c) => {
+                let move_type;
+                try!(match movement {
+                    RightUntil => {
+                        move_type = Inclusive;
+                        match find_char(self.ed.current_buffer(), self.ed.cursor() + 1, c, count) {
+                            Some(i) => self.ed.move_cursor_to(i - 1),
+                            None => Ok(()),
+                        }
+                    }
+                    RightAt => {
+                        move_type = Inclusive;
+                        match find_char(self.ed.current_buffer(), self.ed.cursor() + 1, c, count) {
+                            Some(i) => self.ed.move_cursor_to(i),
+                            None => Ok(()),
+                        }
+                    }
+                    LeftUntil => {
+                        move_type = Exclusive;
+                        match find_char_rev(self.ed.current_buffer(), self.ed.cursor(), c, count) {
+                            Some(i) => self.ed.move_cursor_to(i + 1),
+                            None => Ok(()),
+                        }
+                    }
+                    LeftAt => {
+                        move_type = Exclusive;
+                        match find_char_rev(self.ed.current_buffer(), self.ed.cursor(), c, count) {
+                            Some(i) => self.ed.move_cursor_to(i),
+                            None => Ok(()),
+                        }
+                    }
+                    Repeat | ReverseRepeat => unreachable!(),
+                });
+
+                // go back to the previous mode
+                self.pop_mode_after_movement(move_type)
+            }
+
+            // can't get here due to our match above
+            _ => unreachable!(),
+        }
+    }
+
     fn handle_key_g(&mut self, key: Key) -> io::Result<()> {
         use self::MoveType::*;
 
@@ -853,6 +961,7 @@ impl<'a, W: Write> KeyMap<'a, W, Vi<'a, W>> for Vi<'a, W> {
             Mode::Insert => self.handle_key_insert(key),
             Mode::Replace => self.handle_key_replace(key),
             Mode::Delete(_) => self.handle_key_delete_or_change(key),
+            Mode::MoveToChar(movement) => self.handle_key_move_to_char(key, movement),
             Mode::G => self.handle_key_g(key),
         }
     }
@@ -2735,6 +2844,259 @@ mod tests {
             Char('.'),
         ]);
         assert_eq!(String::from(map), "words words words");
+    }
+
+    #[test]
+    /// make sure t command does nothing if nothing was found
+    fn test_t_not_found() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc defg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('t'),
+            Char('z'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+    }
+
+    #[test]
+    /// make sure t command moves the cursor
+    fn test_t_movement() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc defg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('t'),
+            Char('d'),
+        ]);
+        assert_eq!(map.ed.cursor(), 3);
+    }
+
+    #[test]
+    /// make sure t command moves the cursor
+    fn test_t_movement_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc defg d").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('2'),
+            Char('t'),
+            Char('d'),
+        ]);
+        assert_eq!(map.ed.cursor(), 8);
+    }
+
+    #[test]
+    /// test normal mode after char movement
+    fn test_t_movement_then_normal() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc defg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('t'),
+            Char('d'),
+            Char('l'),
+        ]);
+        assert_eq!(map.ed.cursor(), 4);
+    }
+
+    #[test]
+    /// test delete with char movement
+    fn test_t_movement_with_delete() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc defg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('d'),
+            Char('t'),
+            Char('d'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "defg");
+    }
+
+    #[test]
+    /// test change with char movement
+    fn test_t_movement_with_change() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc defg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('c'),
+            Char('t'),
+            Char('d'),
+            Char('z'),
+            Char(' '),
+            Esc,
+        ]);
+        assert_eq!(map.ed.cursor(), 1);
+        assert_eq!(String::from(map), "z defg");
+    }
+
+    #[test]
+    /// make sure f command moves the cursor
+    fn test_f_movement() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc defg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('f'),
+            Char('d'),
+        ]);
+        assert_eq!(map.ed.cursor(), 4);
+    }
+
+    #[test]
+    /// make sure T command moves the cursor
+    fn test_cap_t_movement() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc defg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('$'),
+            Char('T'),
+            Char('d'),
+        ]);
+        assert_eq!(map.ed.cursor(), 5);
+    }
+
+    #[test]
+    /// make sure F command moves the cursor
+    fn test_cap_f_movement() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc defg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('$'),
+            Char('F'),
+            Char('d'),
+        ]);
+        assert_eq!(map.ed.cursor(), 4);
+    }
+
+    #[test]
+    /// make sure ; command moves the cursor
+    fn test_semi_movement() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc abc").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('f'),
+            Char('c'),
+            Char(';'),
+        ]);
+        assert_eq!(map.ed.cursor(), 6);
+    }
+
+    #[test]
+    /// make sure , command moves the cursor
+    fn test_comma_movement() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc abc").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('f'),
+            Char('c'),
+            Char('$'),
+            Char(','),
+        ]);
+        assert_eq!(map.ed.cursor(), 2);
+    }
+
+    #[test]
+    /// test delete with semi (;)
+    fn test_semi_delete() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc abc").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('f'),
+            Char('c'),
+            Char('d'),
+            Char(';'),
+        ]);
+        assert_eq!(map.ed.cursor(), 1);
+        assert_eq!(String::from(map), "ab");
+    }
+
+    #[test]
+    /// test delete with semi (;) and repeat
+    fn test_semi_delete_repeat() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc abc abc abc").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('f'),
+            Char('c'),
+            Char('d'),
+            Char(';'),
+            Char('.'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "ab");
     }
 
     #[test]
