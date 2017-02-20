@@ -49,11 +49,200 @@ impl ModeStack {
 fn is_movement_key(key: Key) -> bool {
     match key {
         Key::Char('h') | Key::Char('l') | Key::Left | Key::Right |
+            Key::Char('w') | Key::Char('W') | Key::Char('b') | Key::Char('B') |
+            Key::Char('e') | Key::Char('E') |
             Key::Backspace | Key::Char(' ') | Key::Home | Key::End |
             Key::Char('$')
         => true,
         _ => false,
     }
+}
+
+#[derive(PartialEq)]
+enum ViMoveMode {
+    Keyword,
+    Whitespace,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum ViMoveDir {
+    Left,
+    Right,
+}
+
+impl ViMoveDir {
+    pub fn advance(&self, cursor: &mut usize, max: usize) -> bool {
+        self.move_cursor(cursor, max, *self)
+    }
+
+    pub fn go_back(&self, cursor: &mut usize, max: usize) -> bool {
+        match *self {
+            ViMoveDir::Right => self.move_cursor(cursor, max, ViMoveDir::Left),
+            ViMoveDir::Left => self.move_cursor(cursor, max, ViMoveDir::Right),
+        }
+    }
+
+    fn move_cursor(&self, cursor: &mut usize, max: usize, dir: ViMoveDir) -> bool {
+        if dir == ViMoveDir::Right && *cursor == max {
+            return false;
+        }
+
+        if dir == ViMoveDir::Left && *cursor == 0 {
+            return false;
+        }
+
+        match dir {
+            ViMoveDir::Right => *cursor += 1,
+            ViMoveDir::Left => *cursor -= 1,
+        };
+        true
+    }
+}
+
+/// All alphanumeric characters and _ are considered valid for keywords in vi by default.
+fn is_vi_keyword(c: char) -> bool {
+    c == '_' || c.is_alphanumeric()
+}
+
+fn move_word<W: Write>(ed: &mut Editor<W>, count: usize) -> io::Result<()> {
+    vi_move_word(ed, ViMoveMode::Keyword, ViMoveDir::Right, count)
+}
+
+fn move_word_ws<W: Write>(ed: &mut Editor<W>, count: usize) -> io::Result<()> {
+    vi_move_word(ed, ViMoveMode::Whitespace, ViMoveDir::Right, count)
+}
+
+fn move_to_end_of_word_back<W: Write>(ed: &mut Editor<W>, count: usize) -> io::Result<()> {
+    vi_move_word(ed, ViMoveMode::Keyword, ViMoveDir::Left, count)
+}
+
+fn move_to_end_of_word_ws_back<W: Write>(ed: &mut Editor<W>, count: usize) -> io::Result<()> {
+    vi_move_word(ed, ViMoveMode::Whitespace, ViMoveDir::Left, count)
+}
+
+fn vi_move_word<W: Write>(ed: &mut Editor<W>, move_mode: ViMoveMode, direction: ViMoveDir, count: usize) -> io::Result<()> {
+    enum State {
+        Whitespace,
+        Keyword,
+        NonKeyword,
+    };
+
+    let mut cursor = ed.cursor();
+    'repeat: for _ in 0..count {
+        let buf = ed.current_buffer();
+        let mut state = match buf.char_after(cursor) {
+            None => break,
+            Some(c) => match c {
+                c if c.is_whitespace() => State::Whitespace,
+                c if is_vi_keyword(c) => State::Keyword,
+                _ => State::NonKeyword,
+            },
+        };
+
+        while direction.advance(&mut cursor, buf.num_chars()) {
+            let c = match buf.char_after(cursor) {
+                Some(c) => c,
+                _ => break 'repeat,
+            };
+
+            match state {
+                State::Whitespace => match c {
+                    c if c.is_whitespace() => {},
+                    _ => break,
+                },
+                State::Keyword => match c {
+                    c if c.is_whitespace() => state = State::Whitespace,
+                    c if move_mode == ViMoveMode::Keyword
+                        && !is_vi_keyword(c)
+                    => break,
+                    _ => {}
+                },
+                State::NonKeyword => match c {
+                    c if c.is_whitespace() => state = State::Whitespace,
+                    c if move_mode == ViMoveMode::Keyword
+                        && is_vi_keyword(c)
+                    => break,
+                    _ => {}
+                },
+            }
+        }
+    }
+
+    ed.move_cursor_to(cursor)
+}
+
+fn move_to_end_of_word<W: Write>(ed: &mut Editor<W>, count: usize) -> io::Result<()> {
+    vi_move_word_end(ed, ViMoveMode::Keyword, ViMoveDir::Right, count)
+}
+
+fn move_to_end_of_word_ws<W: Write>(ed: &mut Editor<W>, count: usize) -> io::Result<()> {
+    vi_move_word_end(ed, ViMoveMode::Whitespace, ViMoveDir::Right, count)
+}
+
+fn move_word_back<W: Write>(ed: &mut Editor<W>, count: usize) -> io::Result<()> {
+    vi_move_word_end(ed, ViMoveMode::Keyword, ViMoveDir::Left, count)
+}
+
+fn move_word_ws_back<W: Write>(ed: &mut Editor<W>, count: usize) -> io::Result<()> {
+    vi_move_word_end(ed, ViMoveMode::Whitespace, ViMoveDir::Left, count)
+}
+
+fn vi_move_word_end<W: Write>(ed: &mut Editor<W>, move_mode: ViMoveMode, direction: ViMoveDir, count: usize) -> io::Result<()> {
+    enum State {
+        Whitespace,
+        EndOnWord,
+        EndOnOther,
+        EndOnWhitespace,
+    };
+
+    let mut cursor = ed.cursor();
+    'repeat: for _ in 0..count {
+        let buf = ed.current_buffer();
+        let mut state = State::Whitespace;
+
+        while direction.advance(&mut cursor, buf.num_chars()) {
+            let c = match buf.char_after(cursor) {
+                Some(c) => c,
+                _ => break 'repeat,
+            };
+
+            match state {
+                State::Whitespace => match c {
+                    // skip initial whitespace
+                    c if c.is_whitespace() => {},
+                    // if we are in keyword mode and found a keyword, stop on word
+                    c if move_mode == ViMoveMode::Keyword
+                        && is_vi_keyword(c) =>
+                    {
+                        state = State::EndOnWord;
+                    },
+                    // not in keyword mode, stop on whitespace
+                    _ if move_mode == ViMoveMode::Whitespace => {
+                        state = State::EndOnWhitespace;
+                    }
+                    // in keyword mode, found non-whitespace non-keyword, stop on anything
+                    _ => {
+                        state = State::EndOnOther;
+                    }
+                },
+                State::EndOnWord if !is_vi_keyword(c) => {
+                    direction.go_back(&mut cursor, buf.num_chars());
+                    break;
+                },
+                State::EndOnWhitespace if c.is_whitespace() => {
+                    direction.go_back(&mut cursor, buf.num_chars());
+                    break;
+                },
+                State::EndOnOther if c.is_whitespace() || is_vi_keyword(c) => {
+                    direction.go_back(&mut cursor, buf.num_chars());
+                    break;
+                },
+                _ => {},
+            }
+        }
+    }
+
+    ed.move_cursor_to(cursor)
 }
 
 pub struct Vi<'a, W: Write> {
@@ -406,6 +595,36 @@ impl<'a, W: Write> Vi<'a, W> {
             }
             Key::Char('j') | Key::Down => {
                 try!(self.ed.move_down());
+                self.pop_mode_after_movement()
+            }
+            Key::Char('w') => {
+                let count = self.move_count();
+                try!(move_word(&mut self.ed, count));
+                self.pop_mode_after_movement()
+            }
+            Key::Char('W') => {
+                let count = self.move_count();
+                try!(move_word_ws(&mut self.ed, count));
+                self.pop_mode_after_movement()
+            }
+            Key::Char('e') => {
+                let count = self.move_count();
+                try!(move_to_end_of_word(&mut self.ed, count));
+                self.pop_mode_after_movement()
+            }
+            Key::Char('E') => {
+                let count = self.move_count();
+                try!(move_to_end_of_word_ws(&mut self.ed, count));
+                self.pop_mode_after_movement()
+            }
+            Key::Char('b') => {
+                let count = self.move_count();
+                try!(move_word_back(&mut self.ed, count));
+                self.pop_mode_after_movement()
+            }
+            Key::Char('B') => {
+                let count = self.move_count();
+                try!(move_word_ws_back(&mut self.ed, count));
                 self.pop_mode_after_movement()
             }
             // if count is 0, 0 should move to start of line
@@ -1685,6 +1904,415 @@ mod tests {
         ]);
         assert_eq!(map.ed.cursor(), 0);
         assert_eq!(String::from(map), "elete");
+    }
+
+    #[test]
+    fn move_to_end_of_word_simple() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here are").unwrap();
+        let start_pos = ed.cursor();
+        ed.insert_str_after_cursor(" som").unwrap();
+        let end_pos = ed.cursor();
+        ed.insert_str_after_cursor("e words").unwrap();
+        ed.move_cursor_to(start_pos).unwrap();
+
+        super::move_to_end_of_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos);
+    }
+
+    #[test]
+    fn move_to_end_of_word_comma() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here ar").unwrap();
+        let start_pos = ed.cursor();
+        ed.insert_after_cursor('e').unwrap();
+        let end_pos1 = ed.cursor();
+        ed.insert_str_after_cursor(", som").unwrap();
+        let end_pos2 = ed.cursor();
+        ed.insert_str_after_cursor("e words").unwrap();
+        ed.move_cursor_to(start_pos).unwrap();
+
+        super::move_to_end_of_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos1);
+        super::move_to_end_of_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos2);
+    }
+
+    #[test]
+    fn move_to_end_of_word_nonkeywords() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here ar").unwrap();
+        let start_pos = ed.cursor();
+        ed.insert_str_after_cursor("e,,,").unwrap();
+        let end_pos1 = ed.cursor();
+        ed.insert_str_after_cursor(",som").unwrap();
+        let end_pos2 = ed.cursor();
+        ed.insert_str_after_cursor("e words").unwrap();
+        ed.move_cursor_to(start_pos).unwrap();
+
+        super::move_to_end_of_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos1);
+        super::move_to_end_of_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos2);
+    }
+
+    #[test]
+    fn move_to_end_of_word_whitespace() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        assert_eq!(ed.cursor(), 0);
+        ed.insert_str_after_cursor("here are").unwrap();
+        let start_pos = ed.cursor();
+        assert_eq!(ed.cursor(), 8);
+        ed.insert_str_after_cursor("      som").unwrap();
+        assert_eq!(ed.cursor(), 17);
+        ed.insert_str_after_cursor("e words").unwrap();
+        assert_eq!(ed.cursor(), 24);
+        ed.move_cursor_to(start_pos).unwrap();
+        assert_eq!(ed.cursor(), 8);
+
+        super::move_to_end_of_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), 17);
+    }
+
+    #[test]
+    fn move_to_end_of_word_whitespace_nonkeywords() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here ar").unwrap();
+        let start_pos = ed.cursor();
+        ed.insert_str_after_cursor("e   ,,,").unwrap();
+        let end_pos1 = ed.cursor();
+        ed.insert_str_after_cursor(", som").unwrap();
+        let end_pos2 = ed.cursor();
+        ed.insert_str_after_cursor("e words").unwrap();
+        ed.move_cursor_to(start_pos).unwrap();
+
+        super::move_to_end_of_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos1);
+        super::move_to_end_of_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos2);
+    }
+
+    #[test]
+    fn move_to_end_of_word_ws_simple() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here are").unwrap();
+        let start_pos = ed.cursor();
+        ed.insert_str_after_cursor(" som").unwrap();
+        let end_pos = ed.cursor();
+        ed.insert_str_after_cursor("e words").unwrap();
+        ed.move_cursor_to(start_pos).unwrap();
+
+        super::move_to_end_of_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos);
+    }
+
+    #[test]
+    fn move_to_end_of_word_ws_comma() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here ar").unwrap();
+        let start_pos = ed.cursor();
+        ed.insert_after_cursor('e').unwrap();
+        let end_pos1 = ed.cursor();
+        ed.insert_str_after_cursor(", som").unwrap();
+        let end_pos2 = ed.cursor();
+        ed.insert_str_after_cursor("e words").unwrap();
+        ed.move_cursor_to(start_pos).unwrap();
+
+        super::move_to_end_of_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos1);
+        super::move_to_end_of_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos2);
+    }
+
+    #[test]
+    fn move_to_end_of_word_ws_nonkeywords() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here ar").unwrap();
+        let start_pos = ed.cursor();
+        ed.insert_str_after_cursor("e,,,,som").unwrap();
+        let end_pos = ed.cursor();
+        ed.insert_str_after_cursor("e words").unwrap();
+        ed.move_cursor_to(start_pos).unwrap();
+        super::move_to_end_of_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos);
+    }
+
+    #[test]
+    fn move_to_end_of_word_ws_whitespace() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here are").unwrap();
+        let start_pos = ed.cursor();
+        ed.insert_str_after_cursor("      som").unwrap();
+        let end_pos = ed.cursor();
+        ed.insert_str_after_cursor("e words").unwrap();
+        ed.move_cursor_to(start_pos).unwrap();
+
+        super::move_to_end_of_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos);
+    }
+
+    #[test]
+    fn move_to_end_of_word_ws_whitespace_nonkeywords() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here ar").unwrap();
+        let start_pos = ed.cursor();
+        ed.insert_str_after_cursor("e   ,,,").unwrap();
+        let end_pos1 = ed.cursor();
+        ed.insert_str_after_cursor(", som").unwrap();
+        let end_pos2 = ed.cursor();
+        ed.insert_str_after_cursor("e words").unwrap();
+        ed.move_cursor_to(start_pos).unwrap();
+
+        super::move_to_end_of_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos1);
+        super::move_to_end_of_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), end_pos2);
+    }
+
+    #[test]
+    fn move_word_simple() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here ").unwrap();
+        let pos1 = ed.cursor();
+        ed.insert_str_after_cursor("are ").unwrap();
+        let pos2 = ed.cursor();
+        ed.insert_str_after_cursor("some words").unwrap();
+        ed.move_cursor_to_start_of_line().unwrap();
+
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+
+        ed.move_cursor_to_start_of_line().unwrap();
+        super::move_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+    }
+
+    #[test]
+    fn move_word_whitespace() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("   ").unwrap();
+        let pos1 = ed.cursor();
+        ed.insert_str_after_cursor("word").unwrap();
+        let pos2 = ed.cursor();
+        ed.move_cursor_to_start_of_line().unwrap();
+
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+
+        ed.move_cursor_to_start_of_line().unwrap();
+        super::move_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+    }
+
+    #[test]
+    fn move_word_nonkeywords() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("...").unwrap();
+        let pos1 = ed.cursor();
+        ed.insert_str_after_cursor("word").unwrap();
+        let pos2 = ed.cursor();
+        ed.move_cursor_to_start_of_line().unwrap();
+
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+
+        ed.move_cursor_to_start_of_line().unwrap();
+        super::move_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+    }
+
+    #[test]
+    fn move_word_whitespace_nonkeywords() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("...   ").unwrap();
+        let pos1 = ed.cursor();
+        ed.insert_str_after_cursor("...").unwrap();
+        let pos2 = ed.cursor();
+        ed.insert_str_after_cursor("word").unwrap();
+        let pos3 = ed.cursor();
+        ed.move_cursor_to_start_of_line().unwrap();
+
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+
+        ed.move_cursor_to_start_of_line().unwrap();
+        super::move_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos3);
+    }
+
+    #[test]
+    fn move_word_and_back() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here ").unwrap();
+        let pos1 = ed.cursor();
+        ed.insert_str_after_cursor("are ").unwrap();
+        let pos2 = ed.cursor();
+        ed.insert_str_after_cursor("some").unwrap();
+        let pos3 = ed.cursor();
+        ed.insert_str_after_cursor("... ").unwrap();
+        let pos4 = ed.cursor();
+        ed.insert_str_after_cursor("words").unwrap();
+        let pos5 = ed.cursor();
+
+        // make sure move_word() and move_word_back() are reflections of eachother
+
+        ed.move_cursor_to_start_of_line().unwrap();
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos3);
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos4);
+        super::move_word(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos5);
+
+        super::move_word_back(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos4);
+        super::move_word_back(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos3);
+        super::move_word_back(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+        super::move_word_back(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word_back(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), 0);
+
+        ed.move_cursor_to_start_of_line().unwrap();
+        super::move_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+        super::move_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos4);
+        super::move_word_ws(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos5);
+
+        super::move_word_ws_back(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos4);
+        super::move_word_ws_back(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+        super::move_word_ws_back(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word_ws_back(&mut ed, 1).unwrap();
+        assert_eq!(ed.cursor(), 0);
+    }
+
+    #[test]
+    fn move_word_and_back_with_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here ").unwrap();
+        ed.insert_str_after_cursor("are ").unwrap();
+        let pos1 = ed.cursor();
+        ed.insert_str_after_cursor("some").unwrap();
+        let pos2 = ed.cursor();
+        ed.insert_str_after_cursor("... ").unwrap();
+        ed.insert_str_after_cursor("words").unwrap();
+        let pos3 = ed.cursor();
+
+        // make sure move_word() and move_word_back() are reflections of eachother
+        ed.move_cursor_to_start_of_line().unwrap();
+        super::move_word(&mut ed, 3).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+        super::move_word(&mut ed, 2).unwrap();
+        assert_eq!(ed.cursor(), pos3);
+
+        super::move_word_back(&mut ed, 2).unwrap();
+        assert_eq!(ed.cursor(), pos2);
+        super::move_word_back(&mut ed, 3).unwrap();
+        assert_eq!(ed.cursor(), 0);
+
+        ed.move_cursor_to_start_of_line().unwrap();
+        super::move_word_ws(&mut ed, 2).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word_ws(&mut ed, 2).unwrap();
+        assert_eq!(ed.cursor(), pos3);
+
+        super::move_word_ws_back(&mut ed, 2).unwrap();
+        assert_eq!(ed.cursor(), pos1);
+        super::move_word_ws_back(&mut ed, 2).unwrap();
+        assert_eq!(ed.cursor(), 0);
+    }
+
+    #[test]
+    fn move_to_end_of_word_ws_whitespace_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+
+        ed.insert_str_after_cursor("here are").unwrap();
+        let start_pos = ed.cursor();
+        ed.insert_str_after_cursor("      som").unwrap();
+        ed.insert_str_after_cursor("e word").unwrap();
+        let end_pos = ed.cursor();
+        ed.insert_str_after_cursor("s and some").unwrap();
+
+        ed.move_cursor_to(start_pos).unwrap();
+        super::move_to_end_of_word_ws(&mut ed, 2).unwrap();
+        assert_eq!(ed.cursor(), end_pos);
     }
 
     #[test]
