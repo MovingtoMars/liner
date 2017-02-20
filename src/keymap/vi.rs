@@ -18,6 +18,7 @@ enum Mode {
     Normal,
     Replace,
     Delete(usize),
+    G,
 }
 
 struct ModeStack(Vec<Mode>);
@@ -56,7 +57,7 @@ fn is_movement_key(key: Key) -> bool {
     match key {
         Key::Char('h') | Key::Char('l') | Key::Left | Key::Right |
             Key::Char('w') | Key::Char('W') | Key::Char('b') | Key::Char('B') |
-            Key::Char('e') | Key::Char('E') |
+            Key::Char('e') | Key::Char('E') | Key::Char('g') |
             Key::Backspace | Key::Char(' ') | Key::Home | Key::End |
             Key::Char('$')
         => true,
@@ -315,11 +316,19 @@ impl<'a, W: Write> Vi<'a, W> {
         use self::MoveType::*;
 
         let original_mode = self.mode_stack.pop();
+        let last_mode = {
+            // after popping, if mode is delete or change, pop that too. This is used for movements
+            // with sub commands like 't' (MoveToChar) and 'g' (G).
+            match self.mode() {
+                Delete(_) => self.mode_stack.pop(),
+                _ => original_mode,
+            }
+        };
 
         self.ed.no_eol = self.mode() == Mode::Normal;
         self.movement_reset = self.mode() != Mode::Insert;
 
-        match original_mode {
+        match last_mode {
             Delete(start_pos) => {
                 // perform the delete operation
                 match move_type {
@@ -336,12 +345,13 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.count = 0;
                 self.secondary_count = 0;
             }
-            // in normal mode, count goes back to 0 after movement
-            Normal => {
-                self.count = 0;
-            }
             _ => {}
         };
+
+        // in normal mode, count goes back to 0 after movement
+        if original_mode == Normal {
+            self.count = 0;
+        }
 
         Ok(())
     }
@@ -638,6 +648,10 @@ impl<'a, W: Write> Vi<'a, W> {
                 try!(move_word_ws_back(&mut self.ed, count));
                 self.pop_mode_after_movement(Exclusive)
             }
+            Key::Char('g') => {
+                self.set_mode(Mode::G);
+                Ok(())
+            }
             // if count is 0, 0 should move to start of line
             Key::Char('0') if self.count == 0 => {
                 try!(self.ed.move_cursor_to_start_of_line());
@@ -779,6 +793,33 @@ impl<'a, W: Write> Vi<'a, W> {
             }
         }
     }
+
+    fn handle_key_g(&mut self, key: Key) -> io::Result<()> {
+        use self::MoveType::*;
+
+        let count = self.move_count();
+        self.current_command.push(key);
+
+        let res = match key {
+            Key::Char('e') => {
+                try!(move_to_end_of_word_back(&mut self.ed, count));
+                self.pop_mode_after_movement(Inclusive)
+            }
+            Key::Char('E') => {
+                try!(move_to_end_of_word_ws_back(&mut self.ed, count));
+                self.pop_mode_after_movement(Inclusive)
+            }
+
+            // not a supported command
+            _ => {
+                self.normal_mode_abort();
+                Ok(())
+            }
+        };
+
+        self.count = 0;
+        res
+    }
 }
 
 impl<'a, W: Write> KeyMap<'a, W, Vi<'a, W>> for Vi<'a, W> {
@@ -788,6 +829,7 @@ impl<'a, W: Write> KeyMap<'a, W, Vi<'a, W>> for Vi<'a, W> {
             Mode::Insert => self.handle_key_insert(key),
             Mode::Replace => self.handle_key_replace(key),
             Mode::Delete(_) => self.handle_key_delete_or_change(key),
+            Mode::G => self.handle_key_g(key),
         }
     }
 
