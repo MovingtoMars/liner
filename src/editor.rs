@@ -455,6 +455,16 @@ impl<'a, W: Write> Editor<'a, W> {
         self.print_current_buffer(false)
     }
 
+    /// Deletes every character from the cursor until the given position, inclusive.
+    pub fn delete_until_inclusive(&mut self, position: usize) -> io::Result<()> {
+        {
+            let buf = cur_buf_mut!(self);
+            buf.remove(cmp::min(self.cursor, position), cmp::max(self.cursor + 1, position + 1));
+            self.cursor = cmp::min(self.cursor, position);
+        }
+        self.print_current_buffer(false)
+    }
+
     /// Moves the cursor to the left by `count` characters.
     /// The cursor will not go past the start of the buffer.
     pub fn move_cursor_left(&mut self, mut count: usize) -> io::Result<()> {
@@ -681,5 +691,18 @@ mod tests {
         ed.delete_until(1).unwrap();
         assert_eq!(ed.cursor, 1);
         assert_eq!(String::from(ed), "rt");
+    }
+
+    #[test]
+    fn delete_until_inclusive() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let mut ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        ed.insert_str_after_cursor("right").unwrap();
+        ed.cursor = 4;
+
+        ed.delete_until_inclusive(1).unwrap();
+        assert_eq!(ed.cursor, 1);
+        assert_eq!(String::from(ed), "r");
     }
 }
