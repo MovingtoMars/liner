@@ -59,6 +59,18 @@ impl History {
         ret
     }
 
+    pub fn get_first_match(&self, curr_position: Option<usize>, new_buff: &Buffer) -> Option<&Buffer> {
+        let pos = curr_position.unwrap_or(self.buffers.len());
+        for iter in (0..pos).rev() {
+            if let Some(tested) = self.buffers.get(iter) {
+                if tested.is_match(new_buff) {
+                    return self.buffers.get(iter)
+                }
+            }
+        }
+        None
+    }
+
     /// Get the history file name.
     pub fn file_name(&self) -> Option<&str> {
         match self.file_name {

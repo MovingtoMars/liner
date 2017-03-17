@@ -243,6 +243,16 @@ impl Buffer {
         Ok(())
     }
 
+    pub fn print_rest<W>(&self, out: &mut W, other: &Buffer) -> io::Result<()>
+        where W: Write
+    {
+        let matching_part = other.data.len();
+        let string: String = self.data.iter().skip(matching_part).cloned().collect();
+        try!(out.write(string.as_bytes()));
+
+        Ok(())
+    }
+
     fn remove_raw(&mut self, start: usize, end: usize) -> Vec<char> {
         self.data.drain(start..end).collect()
     }
@@ -250,6 +260,20 @@ impl Buffer {
     fn insert_raw(&mut self, start: usize, text: &[char]) {
         for (i, &c) in text.iter().enumerate() {
             self.data.insert(start + i, c)
+        }
+    }
+
+    pub fn is_match(&self, other: &Buffer) -> bool {
+        if other.data.len() != 0 {
+            let match_let = self.data
+                .iter()
+                .zip(&other.data)
+                .take_while(|&(s, o)| *s == *o)
+                .collect::<Vec<_>>()
+                .len();
+            match_let == other.data.len()
+        } else {
+            false
         }
     }
 }

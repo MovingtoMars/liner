@@ -549,6 +549,11 @@ impl<'a, W: Write> Editor<'a, W> {
         try!(write!(self.out, "\r{}{}", clear::AfterCursor, self.prompt));
 
         try!(buf.print(&mut self.out));
+        try!(write!(self.out, "->"));
+        if let Some(hist_match) = self.context.history.get_first_match(self.cur_history_loc, buf) {
+            try!(hist_match.print_rest(&mut self.out, buf));
+        }
+
         if new_prompt_and_buffer_width % w == 0 {
             // at the end of the line, move the cursor down a line
             try!(write!(self.out, "\r\n"));
