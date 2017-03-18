@@ -213,6 +213,11 @@ impl Buffer {
         self.push_action(act);
     }
 
+    pub fn insert_from_buffer(&mut self, other: &Buffer) {
+        let start = self.data.len();
+        self.insert(start, &other.data[start..])
+    }
+
     pub fn range(&self, start: usize, end: usize) -> String {
         self.data[start..end].iter().cloned().collect()
     }

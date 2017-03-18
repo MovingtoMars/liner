@@ -1,6 +1,6 @@
 use std::cmp;
 use std::io::{self, Write};
-use termion::{self, clear, cursor};
+use termion::{self, clear, cursor, color};
 use unicode_width::*;
 
 use Context;
@@ -527,6 +527,20 @@ impl<'a, W: Write> Editor<'a, W> {
         cur_buf_mut!(self)
     }
 
+    /// Accept autosuggestion and copy its content into current buffer
+    pub fn accept_autosuggestion(&mut self) -> io::Result<()> {
+        {
+            let hist_match = self.context.history
+                                 .get_first_match(self.cur_history_loc, self.current_buffer())
+                                 .cloned();
+            let mut buf = self.current_buffer_mut();
+            if let Some(hm) = hist_match {
+                buf.insert_from_buffer(&hm);
+            }
+        }
+        self.print_current_buffer(false)
+    }
+
     /// Deletes the displayed prompt and buffer, replacing them with the current prompt and buffer
     pub fn print_current_buffer(&mut self, move_cursor_to_end_of_line: bool) -> io::Result<()> {
         let buf = cur_buf!(self);
@@ -549,10 +563,11 @@ impl<'a, W: Write> Editor<'a, W> {
         try!(write!(self.out, "\r{}{}", clear::AfterCursor, self.prompt));
 
         try!(buf.print(&mut self.out));
-        try!(write!(self.out, "->"));
+        try!(write!(self.out, "{}", color::Fg(color::Yellow)));
         if let Some(hist_match) = self.context.history.get_first_match(self.cur_history_loc, buf) {
             try!(hist_match.print_rest(&mut self.out, buf));
         }
+        try!(write!(self.out, "{}", color::Fg(color::Reset)));
 
         if new_prompt_and_buffer_width % w == 0 {
             // at the end of the line, move the cursor down a line

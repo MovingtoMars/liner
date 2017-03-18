@@ -59,7 +59,7 @@ impl History {
         ret
     }
 
-    pub fn get_first_match(&self, curr_position: Option<usize>, new_buff: &Buffer) -> Option<&Buffer> {
+    pub fn get_first_match<'a, 'b>(&'a self, curr_position: Option<usize>, new_buff: &'b Buffer) -> Option<&'a Buffer> {
         let pos = curr_position.unwrap_or(self.buffers.len());
         for iter in (0..pos).rev() {
             if let Some(tested) = self.buffers.get(iter) {
