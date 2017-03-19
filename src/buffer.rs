@@ -426,4 +426,42 @@ mod tests {
         assert_eq!(buf.redo(), true);
         assert_eq!(String::from(buf), "defg");
     }
+
+    #[test]
+    fn test_is_match() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        let mut buf2 = Buffer::new();
+        buf2.insert(0, &['a', 'b', 'c']);
+        assert_eq!(buf.is_match(&buf2), true);
+    }
+
+    #[test]
+    fn test_is_not_match() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c']);
+        let mut buf2 = Buffer::new();
+        buf2.insert(0, &['a', 'b', 'c']);
+        assert_eq!(buf.is_match(&buf2), false);
+    }
+
+    #[test]
+    fn test_is_not_match2() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        let mut buf2 = Buffer::new();
+        buf2.insert(0, &['x', 'y', 'z']);
+        assert_eq!(buf.is_match(&buf2), false);
+    }
+
+    #[test]
+    fn test_print_rest() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        let mut buf2 = Buffer::new();
+        buf2.insert(0, &['a', 'b', 'c']);
+        let mut out: Vec<u8> = vec![];
+        buf.print_rest(&mut out, &buf2).unwrap();
+        assert_eq!(out.len(), 4);
+    }
 }
