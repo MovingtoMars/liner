@@ -248,14 +248,17 @@ impl Buffer {
         Ok(())
     }
 
-    pub fn print_rest<W>(&self, out: &mut W, other: &Buffer) -> io::Result<()>
+    /// Takes other buffer, measures its length and prints this buffer from the point where
+    /// the other stopped.
+    /// Used to implement autosuggestions.
+    pub fn print_rest<W>(&self, out: &mut W, other: &Buffer) -> io::Result<usize>
         where W: Write
     {
         let matching_part = other.data.len();
         let string: String = self.data.iter().skip(matching_part).cloned().collect();
-        try!(out.write(string.as_bytes()));
+        out.write(string.as_bytes())?;
 
-        Ok(())
+        Ok(string.len())
     }
 
     fn remove_raw(&mut self, start: usize, end: usize) -> Vec<char> {
@@ -268,15 +271,19 @@ impl Buffer {
         }
     }
 
+    /// Check if the other buffer starts with the same content as this one.
+    /// Used to implement autosuggestions.
     pub fn is_match(&self, other: &Buffer) -> bool {
-        if other.data.len() != 0 {
+        let other_len = other.data.len();
+        let self_len = self.data.len();
+        if other.data.len() != 0 && self_len != other_len {
             let match_let = self.data
                 .iter()
                 .zip(&other.data)
                 .take_while(|&(s, o)| *s == *o)
                 .collect::<Vec<_>>()
                 .len();
-            match_let == other.data.len()
+            match_let == other_len
         } else {
             false
         }

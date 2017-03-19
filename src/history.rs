@@ -59,6 +59,8 @@ impl History {
         ret
     }
 
+    /// Go through the history and try to find a buffer which starts the same as the new buffer
+    /// given to this function as argument.
     pub fn get_first_match<'a, 'b>(&'a self, curr_position: Option<usize>, new_buff: &'b Buffer) -> Option<&'a Buffer> {
         let pos = curr_position.unwrap_or(self.buffers.len());
         for iter in (0..pos).rev() {

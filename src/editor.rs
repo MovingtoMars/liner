@@ -82,6 +82,9 @@ pub struct Editor<'a, W: Write> {
     // If this is true, on the next tab we print the completion list.
     show_completions_hint: bool,
 
+    // Show autosuggestions based on history
+    show_autosuggestions: bool,
+
     // if set, the cursor will not be allow to move one past the end of the line, this is necessary
     // for Vi's normal mode.
     pub no_eol: bool,
@@ -126,6 +129,7 @@ impl<'a, W: Write> Editor<'a, W> {
             cur_history_loc: None,
             context: context,
             show_completions_hint: false,
+            show_autosuggestions: true,
             prompt_width: prompt_width,
             term_cursor_line: 1,
             no_eol: false,
@@ -538,7 +542,7 @@ impl<'a, W: Write> Editor<'a, W> {
                 buf.insert_from_buffer(&hm);
             }
         }
-        self.print_current_buffer(false)
+        self.print_current_buffer(true)
     }
 
     /// Deletes the displayed prompt and buffer, replacing them with the current prompt and buffer
@@ -563,11 +567,16 @@ impl<'a, W: Write> Editor<'a, W> {
         try!(write!(self.out, "\r{}{}", clear::AfterCursor, self.prompt));
 
         try!(buf.print(&mut self.out));
-        try!(write!(self.out, "{}", color::Fg(color::Yellow)));
-        if let Some(hist_match) = self.context.history.get_first_match(self.cur_history_loc, buf) {
-            try!(hist_match.print_rest(&mut self.out, buf));
+
+        // Display autosuggestion
+        if self.show_autosuggestions {
+            if let Some(hist_match) = self.context.history.get_first_match(self.cur_history_loc, buf) {
+                write!(self.out, "{}", color::Fg(color::Yellow))?;
+                let len = hist_match.print_rest(&mut self.out, buf)?;
+                write!(self.out, "{}", color::Fg(color::Reset))?;
+                write!(self.out, "{}", cursor::Left(len as u16))?;
+            }
         }
-        try!(write!(self.out, "{}", color::Fg(color::Reset)));
 
         if new_prompt_and_buffer_width % w == 0 {
             // at the end of the line, move the cursor down a line
