@@ -241,6 +241,7 @@ impl<'a, W: Write> Editor<'a, W> {
             if let Some(ref completer) = self.context.completer {
                 let mut completions = completer.completions(word.as_ref());
                 completions.sort();
+                completions.dedup();
                 (word, completions)
             } else {
                 return Ok(());
