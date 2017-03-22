@@ -213,6 +213,11 @@ impl Buffer {
         self.push_action(act);
     }
 
+    pub fn insert_from_buffer(&mut self, other: &Buffer) {
+        let start = self.data.len();
+        self.insert(start, &other.data[start..])
+    }
+
     pub fn range(&self, start: usize, end: usize) -> String {
         self.data[start..end].iter().cloned().collect()
     }
@@ -243,6 +248,18 @@ impl Buffer {
         Ok(())
     }
 
+    /// Takes other buffer, measures its length and prints this buffer from the point where
+    /// the other stopped.
+    /// Used to implement autosuggestions.
+    pub fn print_rest<W>(&self, out: &mut W, after: usize) -> io::Result<usize>
+        where W: Write
+    {
+        let string: String = self.data.iter().skip(after).cloned().collect();
+        out.write(string.as_bytes())?;
+
+        Ok(string.len())
+    }
+
     fn remove_raw(&mut self, start: usize, end: usize) -> Vec<char> {
         self.data.drain(start..end).collect()
     }
@@ -250,6 +267,24 @@ impl Buffer {
     fn insert_raw(&mut self, start: usize, text: &[char]) {
         for (i, &c) in text.iter().enumerate() {
             self.data.insert(start + i, c)
+        }
+    }
+
+    /// Check if the other buffer starts with the same content as this one.
+    /// Used to implement autosuggestions.
+    pub fn starts_with(&self, other: &Buffer) -> bool {
+        let other_len = other.data.len();
+        let self_len = self.data.len();
+        if other.data.len() != 0 && self_len != other_len {
+            let match_let = self.data
+                .iter()
+                .zip(&other.data)
+                .take_while(|&(s, o)| *s == *o)
+                .collect::<Vec<_>>()
+                .len();
+            match_let == other_len
+        } else {
+            false
         }
     }
 }
@@ -389,5 +424,43 @@ mod tests {
         assert_eq!(buf.undo(), true);
         assert_eq!(buf.redo(), true);
         assert_eq!(String::from(buf), "defg");
+    }
+
+    #[test]
+    fn test_starts_with() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        let mut buf2 = Buffer::new();
+        buf2.insert(0, &['a', 'b', 'c']);
+        assert_eq!(buf.starts_with(&buf2), true);
+    }
+
+    #[test]
+    fn test_does_not_start_with() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c']);
+        let mut buf2 = Buffer::new();
+        buf2.insert(0, &['a', 'b', 'c']);
+        assert_eq!(buf.starts_with(&buf2), false);
+    }
+
+    #[test]
+    fn test_is_not_match2() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        let mut buf2 = Buffer::new();
+        buf2.insert(0, &['x', 'y', 'z']);
+        assert_eq!(buf.starts_with(&buf2), false);
+    }
+
+    #[test]
+    fn test_print_rest() {
+        let mut buf = Buffer::new();
+        buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+        let mut buf2 = Buffer::new();
+        buf2.insert(0, &['a', 'b', 'c']);
+        let mut out: Vec<u8> = vec![];
+        buf.print_rest(&mut out, buf2.data.len()).unwrap();
+        assert_eq!(out.len(), 4);
     }
 }

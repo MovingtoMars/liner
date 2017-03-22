@@ -18,6 +18,9 @@ pub trait KeyMap<'a, W: Write, T>: From<T> {
                 try!(self.editor().handle_newline());
                 done = true;
             }
+            Key::Ctrl('f') => {
+                try!(self.editor().accept_autosuggestion());
+            }
             _ => {
                 try!(self.handle_key_core(key));
                 self.editor().skip_completions_hint();
