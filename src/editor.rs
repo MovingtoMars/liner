@@ -572,7 +572,7 @@ impl<'a, W: Write> Editor<'a, W> {
         if self.show_autosuggestions {
             if let Some(hist_match) = self.context.history.get_first_match(self.cur_history_loc, buf) {
                 write!(self.out, "{}", color::Fg(color::Yellow))?;
-                let len = hist_match.print_rest(&mut self.out, buf)?;
+                let len = hist_match.print_rest(&mut self.out, buf.chars().len())?;
                 write!(self.out, "{}", color::Fg(color::Reset))?;
                 write!(self.out, "{}", cursor::Left(len as u16))?;
             }

@@ -65,7 +65,7 @@ impl History {
         let pos = curr_position.unwrap_or(self.buffers.len());
         for iter in (0..pos).rev() {
             if let Some(tested) = self.buffers.get(iter) {
-                if tested.is_match(new_buff) {
+                if tested.starts_with(new_buff) {
                     return self.buffers.get(iter)
                 }
             }

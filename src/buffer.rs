@@ -251,11 +251,10 @@ impl Buffer {
     /// Takes other buffer, measures its length and prints this buffer from the point where
     /// the other stopped.
     /// Used to implement autosuggestions.
-    pub fn print_rest<W>(&self, out: &mut W, other: &Buffer) -> io::Result<usize>
+    pub fn print_rest<W>(&self, out: &mut W, after: usize) -> io::Result<usize>
         where W: Write
     {
-        let matching_part = other.data.len();
-        let string: String = self.data.iter().skip(matching_part).cloned().collect();
+        let string: String = self.data.iter().skip(after).cloned().collect();
         out.write(string.as_bytes())?;
 
         Ok(string.len())
@@ -273,7 +272,7 @@ impl Buffer {
 
     /// Check if the other buffer starts with the same content as this one.
     /// Used to implement autosuggestions.
-    pub fn is_match(&self, other: &Buffer) -> bool {
+    pub fn starts_with(&self, other: &Buffer) -> bool {
         let other_len = other.data.len();
         let self_len = self.data.len();
         if other.data.len() != 0 && self_len != other_len {
@@ -428,21 +427,21 @@ mod tests {
     }
 
     #[test]
-    fn test_is_match() {
+    fn test_starts_with() {
         let mut buf = Buffer::new();
         buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
         let mut buf2 = Buffer::new();
         buf2.insert(0, &['a', 'b', 'c']);
-        assert_eq!(buf.is_match(&buf2), true);
+        assert_eq!(buf.starts_with(&buf2), true);
     }
 
     #[test]
-    fn test_is_not_match() {
+    fn test_does_not_start_with() {
         let mut buf = Buffer::new();
         buf.insert(0, &['a', 'b', 'c']);
         let mut buf2 = Buffer::new();
         buf2.insert(0, &['a', 'b', 'c']);
-        assert_eq!(buf.is_match(&buf2), false);
+        assert_eq!(buf.starts_with(&buf2), false);
     }
 
     #[test]
@@ -451,7 +450,7 @@ mod tests {
         buf.insert(0, &['a', 'b', 'c', 'd', 'e', 'f', 'g']);
         let mut buf2 = Buffer::new();
         buf2.insert(0, &['x', 'y', 'z']);
-        assert_eq!(buf.is_match(&buf2), false);
+        assert_eq!(buf.starts_with(&buf2), false);
     }
 
     #[test]
@@ -461,7 +460,7 @@ mod tests {
         let mut buf2 = Buffer::new();
         buf2.insert(0, &['a', 'b', 'c']);
         let mut out: Vec<u8> = vec![];
-        buf.print_rest(&mut out, &buf2).unwrap();
+        buf.print_rest(&mut out, buf2.data.len()).unwrap();
         assert_eq!(out.len(), 4);
     }
 }
