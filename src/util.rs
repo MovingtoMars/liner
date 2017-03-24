@@ -37,24 +37,41 @@ pub fn find_longest_common_prefix<T: Clone + Eq>(among: &[Vec<T>]) -> Option<Vec
     None
 }
 
-fn is_ascii_letter(c: char) -> bool {
-    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
-
-fn can_finish_code(c: char) -> bool {
-    if c == 'P' {
-        // dsc code
-        return false;
-    }
-
-    c == '?' || is_ascii_letter(c)
+pub enum AnsiState {
+    Norm,
+    Esc,
+    Csi,
+    Osc,
 }
 
 pub fn remove_codes(input: &str) -> Cow<str> {
     if input.contains('\x1B') {
-        Cow::Owned(input.split('\x1B')
-            .flat_map(|x| x.chars().skip_while(|&c| !can_finish_code(c)).skip(1))
-            .collect())
+        let mut clean = String::new();
+
+        let mut s = AnsiState::Norm;
+        for c in input.chars() {
+            match s {
+                AnsiState::Norm => match c {
+                    '\x1B' => s = AnsiState::Esc,
+                    _ => clean.push(c),
+                },
+                AnsiState::Esc => match c {
+                    '[' => s = AnsiState::Csi,
+                    ']' => s = AnsiState::Osc,
+                    _ => s = AnsiState::Norm,
+                },
+                AnsiState::Csi => match c {
+                    'A' ... 'Z' | 'a' ... 'z' => s = AnsiState::Norm,
+                    _ => (),
+                },
+                AnsiState::Osc => match c {
+                    '\x07' => s = AnsiState::Norm,
+                    _ => (),
+                }
+            }
+        }
+
+        Cow::Owned(clean)
     } else {
         Cow::Borrowed(input)
     }
