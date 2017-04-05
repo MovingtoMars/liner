@@ -56,10 +56,6 @@ impl Completer for FilenameCompleter {
             full_path = PathBuf::from(start_owned.clone());
         }
 
-        if full_path.is_relative() {
-            return vec![];
-        }
-
         let p;
         let start_name;
         let completing_dir;
