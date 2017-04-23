@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, Write, ErrorKind};
 use termion::event::Key;
 use Editor;
 use event::*;
@@ -13,6 +13,10 @@ pub trait KeyMap<'a, W: Write, T>: From<T> {
         handler(Event::new(self.editor(), EventKind::BeforeKey(key)));
 
         match key {
+            Key::Ctrl('c') => {
+                try!(self.editor().handle_newline());
+                return Err(io::Error::new(ErrorKind::Interrupted, "ctrl-c"));
+            }
             Key::Char('\t') => try!(self.editor().complete(handler)),
             Key::Char('\n') => {
                 try!(self.editor().handle_newline());
@@ -40,3 +44,46 @@ pub use vi::Vi;
 
 pub mod emacs;
 pub use emacs::Emacs;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use termion::event::Key::*;
+    use std::io::ErrorKind;
+    use Context;
+
+    struct TestKeyMap<'a, W: Write> {
+        ed: Editor<'a, W>,
+    }
+
+    impl<'a, W: Write> TestKeyMap<'a, W> {
+        pub fn new(ed: Editor<'a, W>) -> Self {
+            TestKeyMap {
+                ed: ed,
+            }
+        }
+    }
+
+    impl<'a, W: Write> KeyMap<'a, W, TestKeyMap<'a, W>> for TestKeyMap<'a, W> {
+        fn handle_key_core(&mut self, _: Key) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn editor(&mut self) ->  &mut Editor<'a, W> {
+            &mut self.ed
+        }
+    }
+
+    #[test]
+    /// ctrl-c should generate an error
+    fn ctrl_c() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = TestKeyMap::new(ed);
+
+        let res = map.handle_key(Ctrl('c'), &mut |_| {});
+        assert_eq!(res.is_err(), true);
+        assert_eq!(res.err().unwrap().kind(), ErrorKind::Interrupted);
+    }
+}
