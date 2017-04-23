@@ -287,6 +287,11 @@ impl Buffer {
             false
         }
     }
+
+    /// Return true if the buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
 }
 
 #[cfg(test)]

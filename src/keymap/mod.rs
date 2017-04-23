@@ -12,10 +12,17 @@ pub trait KeyMap<'a, W: Write, T>: From<T> {
 
         handler(Event::new(self.editor(), EventKind::BeforeKey(key)));
 
+        let is_empty = self.editor().current_buffer().is_empty();
+
         match key {
             Key::Ctrl('c') => {
                 try!(self.editor().handle_newline());
                 return Err(io::Error::new(ErrorKind::Interrupted, "ctrl-c"));
+            }
+            // if the current buffer is empty, treat ctrl-d as eof
+            Key::Ctrl('d') if is_empty => {
+                try!(self.editor().handle_newline());
+                return Err(io::Error::new(ErrorKind::UnexpectedEof, "ctrl-d"));
             }
             Key::Char('\t') => try!(self.editor().complete(handler)),
             Key::Char('\n') => {
@@ -72,6 +79,32 @@ mod tests {
         fn editor(&mut self) ->  &mut Editor<'a, W> {
             &mut self.ed
         }
+    }
+
+    #[test]
+    /// when the current buffer is empty, ctrl-d generates and eof error
+    fn ctrl_d_empty() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = TestKeyMap::new(ed);
+
+        let res = map.handle_key(Ctrl('d'), &mut |_| {});
+        assert_eq!(res.is_err(), true);
+        assert_eq!(res.err().unwrap().kind(), ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    /// when the current buffer is not empty, ctrl-d should be ignored
+    fn ctrl_d_non_empty() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = TestKeyMap::new(ed);
+        map.ed.insert_str_after_cursor("not empty").unwrap();
+
+        let res = map.handle_key(Ctrl('d'), &mut |_| {});
+        assert_eq!(res.is_ok(), true);
     }
 
     #[test]
