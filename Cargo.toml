@@ -1,6 +1,6 @@
 [package]
 name = "liner"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["MovingtoMars <definitelynotliam@gmail.com>"]
 description = "A library offering readline-like functionality."
 repository = "https://github.com/MovingtoMars/liner"
