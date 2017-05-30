@@ -248,6 +248,12 @@ impl Buffer {
         Ok(())
     }
 
+    pub fn as_bytes(&self) -> Vec<u8> {
+        // NOTE: not particularly efficient. Could make a proper byte iterator with minimal
+        // allocations if performance becomes an issue.
+        self.to_string().into_bytes()
+    }
+
     /// Takes other buffer, measures its length and prints this buffer from the point where
     /// the other stopped.
     /// Used to implement autosuggestions.
