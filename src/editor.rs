@@ -536,17 +536,25 @@ impl<'a, W: Write> Editor<'a, W> {
 
     /// Accept autosuggestion and copy its content into current buffer
     pub fn accept_autosuggestion(&mut self) -> io::Result<()> {
+        if self.show_autosuggestions {
         {
             let hist_match = self.context
                 .history
-                .get_first_match(self.cur_history_loc, self.current_buffer())
+                .get_newest_match(self.cur_history_loc, self.current_buffer())
                 .cloned();
             let mut buf = self.current_buffer_mut();
             if let Some(hm) = hist_match {
                 buf.insert_from_buffer(&hm);
             }
         }
+    }
         self.print_current_buffer(true)
+    }
+
+    pub fn is_currently_showing_autosuggestion(&self) -> bool {
+        self.show_autosuggestions && self.context
+                .history
+                .get_newest_match(self.cur_history_loc, self.current_buffer()).is_some()
     }
 
     /// Deletes the displayed prompt and buffer, replacing them with the current prompt and buffer
@@ -576,7 +584,7 @@ impl<'a, W: Write> Editor<'a, W> {
         if self.show_autosuggestions {
             if let Some(hist_match) = self.context
                    .history
-                   .get_first_match(self.cur_history_loc, buf) {
+                   .get_newest_match(self.cur_history_loc, buf) {
                 write!(self.out, "{}", color::Fg(color::Yellow))?;
                 let len = hist_match.print_rest(&mut self.out, buf.chars().len())?;
                 write!(self.out, "{}", color::Fg(color::Reset))?;

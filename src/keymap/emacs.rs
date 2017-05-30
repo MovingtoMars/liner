@@ -67,8 +67,12 @@ impl<'a, W: Write> KeyMap<'a, W, Emacs<'a, W>> for Emacs<'a, W> {
         }
     }
 
-    fn editor(&mut self) -> &mut Editor<'a, W> {
+    fn editor_mut(&mut self) ->  &mut Editor<'a, W> {
         &mut self.ed
+    }
+
+    fn editor(&self) ->  &Editor<'a, W> {
+        &self.ed
     }
 }
 
@@ -126,7 +130,7 @@ mod tests {
         let out = Vec::new();
         let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
         let mut map = Emacs::new(ed);
-        map.editor().insert_str_after_cursor("let").unwrap();
+        map.editor_mut().insert_str_after_cursor("let").unwrap();
         assert_eq!(map.ed.cursor(), 3);
 
         simulate_keys!(map, [Key::Left, Key::Char('f')]);

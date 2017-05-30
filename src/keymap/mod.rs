@@ -5,42 +5,43 @@ use event::*;
 
 pub trait KeyMap<'a, W: Write, T>: From<T> {
     fn handle_key_core(&mut self, key: Key) -> io::Result<()>;
-    fn editor(&mut self) -> &mut Editor<'a, W>;
+    fn editor(&self) -> &Editor<'a, W>;
+    fn editor_mut(&mut self) -> &mut Editor<'a, W>;
 
     fn handle_key(&mut self, key: Key, handler: &mut EventHandler<W>) -> io::Result<bool> {
         let mut done = false;
 
-        handler(Event::new(self.editor(), EventKind::BeforeKey(key)));
+        handler(Event::new(self.editor_mut(), EventKind::BeforeKey(key)));
 
         let is_empty = self.editor().current_buffer().is_empty();
 
         match key {
             Key::Ctrl('c') => {
-                try!(self.editor().handle_newline());
+                try!(self.editor_mut().handle_newline());
                 return Err(io::Error::new(ErrorKind::Interrupted, "ctrl-c"));
             }
             // if the current buffer is empty, treat ctrl-d as eof
             Key::Ctrl('d') if is_empty => {
-                try!(self.editor().handle_newline());
+                try!(self.editor_mut().handle_newline());
                 return Err(io::Error::new(ErrorKind::UnexpectedEof, "ctrl-d"));
             }
-            Key::Char('\t') => try!(self.editor().complete(handler)),
+            Key::Char('\t') => try!(self.editor_mut().complete(handler)),
             Key::Char('\n') => {
-                try!(self.editor().handle_newline());
+                try!(self.editor_mut().handle_newline());
                 done = true;
             }
-            Key::Ctrl('f') => {
-                try!(self.editor().accept_autosuggestion());
+            Key::Ctrl('f') | Key::Right if self.editor().is_currently_showing_autosuggestion() => {
+                try!(self.editor_mut().accept_autosuggestion());
             }
             _ => {
                 try!(self.handle_key_core(key));
-                self.editor().skip_completions_hint();
+                self.editor_mut().skip_completions_hint();
             }
         };
 
-        handler(Event::new(self.editor(), EventKind::AfterKey(key)));
+        handler(Event::new(self.editor_mut(), EventKind::AfterKey(key)));
 
-        try!(self.editor().flush());
+        try!(self.editor_mut().flush());
 
         Ok(done)
     }
@@ -76,8 +77,12 @@ mod tests {
             Ok(())
         }
 
-        fn editor(&mut self) ->  &mut Editor<'a, W> {
+        fn editor_mut(&mut self) ->  &mut Editor<'a, W> {
             &mut self.ed
+        }
+
+        fn editor(&self) ->  &Editor<'a, W> {
+            &self.ed
         }
     }
 
