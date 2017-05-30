@@ -258,14 +258,14 @@ impl<'a, W: Write> Editor<'a, W> {
             self.insert_str_after_cursor(completions[0].as_ref())
         } else {
             let common_prefix =
-                util::find_longest_common_prefix(&completions.iter()
-                    .map(|x| x.chars().collect())
-                    .collect::<Vec<Vec<char>>>()[..]);
+                util::find_longest_common_prefix(&completions
+                                                      .iter()
+                                                      .map(|x| x.chars().collect())
+                                                      .collect::<Vec<Vec<char>>>()
+                                                      [..]);
 
             if let Some(p) = common_prefix {
-                let s = p.iter()
-                    .cloned()
-                    .collect::<String>();
+                let s = p.iter().cloned().collect::<String>();
 
                 if s.len() > word.len() && s.starts_with(&word[..]) {
                     try!(self.delete_word_before_cursor(false));
@@ -454,7 +454,8 @@ impl<'a, W: Write> Editor<'a, W> {
     pub fn delete_until(&mut self, position: usize) -> io::Result<()> {
         {
             let buf = cur_buf_mut!(self);
-            buf.remove(cmp::min(self.cursor, position), cmp::max(self.cursor, position));
+            buf.remove(cmp::min(self.cursor, position),
+                       cmp::max(self.cursor, position));
             self.cursor = cmp::min(self.cursor, position);
         }
         self.print_current_buffer(false)
@@ -464,7 +465,8 @@ impl<'a, W: Write> Editor<'a, W> {
     pub fn delete_until_inclusive(&mut self, position: usize) -> io::Result<()> {
         {
             let buf = cur_buf_mut!(self);
-            buf.remove(cmp::min(self.cursor, position), cmp::max(self.cursor + 1, position + 1));
+            buf.remove(cmp::min(self.cursor, position),
+                       cmp::max(self.cursor + 1, position + 1));
             self.cursor = cmp::min(self.cursor, position);
         }
         self.print_current_buffer(false)
@@ -535,9 +537,10 @@ impl<'a, W: Write> Editor<'a, W> {
     /// Accept autosuggestion and copy its content into current buffer
     pub fn accept_autosuggestion(&mut self) -> io::Result<()> {
         {
-            let hist_match = self.context.history
-                                 .get_first_match(self.cur_history_loc, self.current_buffer())
-                                 .cloned();
+            let hist_match = self.context
+                .history
+                .get_first_match(self.cur_history_loc, self.current_buffer())
+                .cloned();
             let mut buf = self.current_buffer_mut();
             if let Some(hm) = hist_match {
                 buf.insert_from_buffer(&hm);
@@ -571,7 +574,9 @@ impl<'a, W: Write> Editor<'a, W> {
 
         // Display autosuggestion
         if self.show_autosuggestions {
-            if let Some(hist_match) = self.context.history.get_first_match(self.cur_history_loc, buf) {
+            if let Some(hist_match) = self.context
+                   .history
+                   .get_first_match(self.cur_history_loc, buf) {
                 write!(self.out, "{}", color::Fg(color::Yellow))?;
                 let len = hist_match.print_rest(&mut self.out, buf.chars().len())?;
                 write!(self.out, "{}", color::Fg(color::Reset))?;

@@ -16,7 +16,11 @@ impl BasicCompleter {
 
 impl Completer for BasicCompleter {
     fn completions(&self, start: &str) -> Vec<String> {
-        self.prefixes.iter().filter(|s| s.starts_with(start)).cloned().collect()
+        self.prefixes
+            .iter()
+            .filter(|s| s.starts_with(start))
+            .cloned()
+            .collect()
     }
 }
 
@@ -64,7 +68,11 @@ impl Completer for FilenameCompleter {
             Some(parent) if start != "" && !start_owned.ends_with("/") &&
                             !full_path.ends_with("..") => {
                 p = PathBuf::from(parent);
-                start_name = full_path.file_name().unwrap().to_string_lossy().into_owned();
+                start_name = full_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
                 completing_dir = false;
             }
             _ => {
