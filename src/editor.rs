@@ -161,7 +161,7 @@ impl<'a, W: Write> Editor<'a, W> {
 
     pub fn handle_newline(&mut self) -> io::Result<()> {
         try!(self.print_current_buffer(true));
-        try!(self.out.write(b"\r\n"));
+        try!(self.out.write_all(b"\r\n"));
         self.show_completions_hint = false;
         Ok(())
     }
@@ -248,7 +248,7 @@ impl<'a, W: Write> Editor<'a, W> {
             }
         };
 
-        if completions.len() == 0 {
+        if completions.is_empty() {
             // Do nothing.
             self.show_completions_hint = false;
             Ok(())
@@ -290,7 +290,7 @@ impl<'a, W: Write> Editor<'a, W> {
     fn get_word_before_cursor(&self, ignore_space_before_cursor: bool) -> Option<(usize, usize)> {
         let (words, pos) = self.get_words_and_cursor_position();
         match pos {
-            CursorPosition::InWord(i) => Some(words[i]),
+            CursorPosition::InWord(i) | CursorPosition::OnWordRightEdge(i) => Some(words[i]),
             CursorPosition::InSpace(Some(i), _) => {
                 if ignore_space_before_cursor {
                     Some(words[i])
@@ -306,7 +306,6 @@ impl<'a, W: Write> Editor<'a, W> {
                     None
                 }
             }
-            CursorPosition::OnWordRightEdge(i) => Some(words[i]),
         }
     }
 
@@ -340,12 +339,10 @@ impl<'a, W: Write> Editor<'a, W> {
             } else {
                 return self.print_current_buffer(false);
             }
+        } else if self.context.history.len() > 0 {
+            self.cur_history_loc = Some(self.context.history.len() - 1);
         } else {
-            if self.context.history.len() > 0 {
-                self.cur_history_loc = Some(self.context.history.len() - 1);
-            } else {
-                return self.print_current_buffer(false);
-            }
+            return self.print_current_buffer(false);
         }
 
         self.print_current_buffer(true)
@@ -598,19 +595,13 @@ impl<'a, W: Write> Editor<'a, W> {
         }
 
         let buf_num_chars = buf.num_chars();
-        if move_cursor_to_end_of_line {
+        if move_cursor_to_end_of_line || buf_num_chars < self.cursor {
             self.cursor = buf_num_chars;
-        } else {
-            if buf_num_chars < self.cursor {
-                self.cursor = buf_num_chars;
-            }
         }
 
         // can't move past the last character in vi normal mode
-        if self.no_eol {
-            if self.cursor >= 1 && self.cursor == buf_num_chars {
-                self.cursor -= 1;
-            }
+        if self.no_eol && (self.cursor >= 1 && self.cursor == buf_num_chars) {
+            self.cursor -= 1;
         }
 
         self.term_cursor_line = (self.prompt_width + buf.range_width(0, self.cursor) + w) / w;
