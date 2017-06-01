@@ -108,15 +108,6 @@ macro_rules! cur_buf {
     }
 }
 
-macro_rules! send_event {
-    ($handler:expr, $s:expr, $kind:ident, $($args:expr),*) => {
-        $handler(Event::new($s, EventKind::$kind($($args),*)))
-    };
-    ($handler:expr, $s:expr, $kind:ident) => {
-        $handler(Event::new($s, EventKind::$kind))
-    }
-}
-
 impl<'a, W: Write> Editor<'a, W> {
     pub fn new(out: W, prompt: String, context: &'a mut Context) -> io::Result<Self> {
         let prompt_width = util::remove_codes(&prompt[..]).width();
@@ -227,7 +218,7 @@ impl<'a, W: Write> Editor<'a, W> {
     }
 
     pub fn complete(&mut self, handler: &mut EventHandler<W>) -> io::Result<()> {
-        send_event!(handler, self, BeforeComplete);
+        handler(Event::new(self, EventKind::BeforeComplete));
 
         let (word, completions) = {
             let word_range = self.get_word_before_cursor(false);
