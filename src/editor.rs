@@ -537,30 +537,36 @@ impl<'a, W: Write> Editor<'a, W> {
     /// Accept autosuggestion and copy its content into current buffer
     pub fn accept_autosuggestion(&mut self) -> io::Result<()> {
         if self.show_autosuggestions {
-        {
-            let hist_match = self.context
-                .history
-                .get_newest_match(self.cur_history_loc, self.current_buffer())
-                .cloned();
-            let mut buf = self.current_buffer_mut();
-            if let Some(hm) = hist_match {
-                buf.insert_from_buffer(&hm);
+            {
+                let autosuggestion = self.current_autosuggestion().cloned();
+                let mut buf = self.current_buffer_mut();
+                if let Some(x) = autosuggestion {
+                    buf.insert_from_buffer(&x);
+                }
             }
         }
-    }
         self.print_current_buffer(true)
     }
 
+    pub fn current_autosuggestion(&self) -> Option<&Buffer> {
+        if self.show_autosuggestions {
+            self.context
+                    .history
+                    .get_newest_match(self.cur_history_loc, self.current_buffer())
+        } else {
+            None
+        }
+    }
+
     pub fn is_currently_showing_autosuggestion(&self) -> bool {
-        self.show_autosuggestions && self.context
-                .history
-                .get_newest_match(self.cur_history_loc, self.current_buffer()).is_some()
+        self.current_autosuggestion().is_some()
     }
 
     /// Deletes the displayed prompt and buffer, replacing them with the current prompt and buffer
     pub fn print_current_buffer(&mut self, move_cursor_to_end_of_line: bool) -> io::Result<()> {
         let buf = cur_buf!(self);
         let buf_width = buf.width();
+        //let autosuggestion_width = self.current_autosuggestion().map_or(0, |x| x.width());
         let new_prompt_and_buffer_width = buf_width + self.prompt_width;
 
         let (w, _) =
