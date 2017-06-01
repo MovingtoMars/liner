@@ -3,8 +3,9 @@ A Rust library offering readline-like functionality.
 
 [CONTRIBUTING.md](/CONTRIBUTING.md)
 
-[![](https://meritbadge.herokuapp.com/liner)](https://crates.io/crates/liner)
+[![crates.io](https://meritbadge.herokuapp.com/liner)](https://crates.io/crates/liner)
 [![Build Status](https://travis-ci.org/MovingtoMars/liner.svg)](https://travis-ci.org/MovingtoMars/liner)
+[![Docs](https://docs.rs/liner/badge.svg)](https://docs.rs/liner/)
 
 ## Basic Usage
 In `Cargo.toml`:
