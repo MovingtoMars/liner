@@ -5,7 +5,7 @@ use termion::raw::{IntoRawMode, RawTerminal};
 use super::*;
 use keymap;
 
-/// The default for `Context.word_fn`.
+/// The default for `Context.word_divider_fn`.
 pub fn get_buffer_words(buf: &Buffer) -> Vec<(usize, usize)> {
     let mut res = Vec::new();
 
@@ -49,7 +49,7 @@ pub enum KeyBindings {
 pub struct Context {
     pub history: History,
     pub completer: Option<Box<Completer>>,
-    pub word_fn: Box<Fn(&Buffer) -> Vec<(usize, usize)>>,
+    pub word_divider_fn: Box<Fn(&Buffer) -> Vec<(usize, usize)>>,
     pub key_bindings: KeyBindings,
 }
 
@@ -58,7 +58,7 @@ impl Context {
         Context {
             history: History::new(),
             completer: None,
-            word_fn: Box::new(get_buffer_words),
+            word_divider_fn: Box::new(get_buffer_words),
             key_bindings: KeyBindings::Emacs,
         }
     }

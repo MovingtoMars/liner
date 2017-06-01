@@ -131,7 +131,7 @@ impl<'a, W: Write> Editor<'a, W> {
     }
 
     pub fn get_words_and_cursor_position(&self) -> (Vec<(usize, usize)>, CursorPosition) {
-        let word_fn = &self.context.word_fn;
+        let word_fn = &self.context.word_divider_fn;
         let words = word_fn(cur_buf!(self));
         let pos = CursorPosition::get(self.cursor, &words);
         (words, pos)

@@ -20,9 +20,9 @@ impl<'a, 'out: 'a, W: Write + 'a> Event<'a, 'out, W> {
 
 #[derive(Debug)]
 pub enum EventKind {
-    /// Sent in `Editor.handle_key()`, before handling the key.
+    /// Sent before handling a keypress.
     BeforeKey(Key),
-    /// Sent in `Editor.handle_key()`, after handling the key.
+    /// Sent after handling a keypress.
     AfterKey(Key),
     /// Sent in `Editor.complete()`, before processing the completion.
     BeforeComplete,
