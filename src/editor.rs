@@ -542,8 +542,8 @@ impl<'a, W: Write> Editor<'a, W> {
     pub fn current_autosuggestion(&self) -> Option<&Buffer> {
         if self.show_autosuggestions {
             self.context
-                    .history
-                    .get_newest_match(self.cur_history_loc, self.current_buffer())
+                .history
+                .get_newest_match(self.cur_history_loc, self.current_buffer())
         } else {
             None
         }
