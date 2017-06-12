@@ -37,5 +37,7 @@ fn main() {
 }
 ```
 
+**See src/main.rs for a more sophisticated example.**
+
 ## License
 MIT licensed. See the `LICENSE` file.
