@@ -513,6 +513,15 @@ impl<'a, W: Write> Editor<'a, W> {
         self.print_current_buffer(false)
     }
 
+    pub fn cursor_is_at_end_of_line(&self) -> bool {
+        let num_chars = cur_buf!(self).num_chars();
+        if self.no_eol {
+            self.cursor == num_chars - 1
+        } else {
+            self.cursor == num_chars
+        }
+    }
+
     ///  Returns a reference to the current buffer being edited.
     /// This may be the new buffer or a buffer from history.
     pub fn current_buffer(&self) -> &Buffer {

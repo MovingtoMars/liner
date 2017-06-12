@@ -30,7 +30,11 @@ pub trait KeyMap<'a, W: Write, T>: From<T> {
                 try!(self.editor_mut().handle_newline());
                 done = true;
             }
-            Key::Ctrl('f') | Key::Right if self.editor().is_currently_showing_autosuggestion() => {
+            Key::Ctrl('f') if self.editor().is_currently_showing_autosuggestion() => {
+                try!(self.editor_mut().accept_autosuggestion());
+            }
+            Key::Right if self.editor().is_currently_showing_autosuggestion() &&
+                          self.editor().cursor_is_at_end_of_line() => {
                 try!(self.editor_mut().accept_autosuggestion());
             }
             _ => {
