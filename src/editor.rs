@@ -558,6 +558,22 @@ impl<'a, W: Write> Editor<'a, W> {
         }
     }
 
+    // XXX: better name?
+    pub fn current_autosuggestion_extra(&self) -> Option<String> {
+        self.current_autosuggestion().map(|s| s.chars().skip(cur_buf!(self).num_chars()).collect())
+    }
+
+    // XXX: better name?
+    /// Gets the width of the part of the autosuggestion that hasn't been typed.
+    pub fn current_autosuggestion_extra_width(&self) -> usize {
+        match self.current_autosuggestion() {
+            // XXX: subtracting widths might cause problems if autosugestion boundary is between
+            // two characters with a modified width when placed together
+            Some(suggestion) => suggestion.width() - cur_buf!(self).width(),
+            None => 0,
+        }
+    }
+
     pub fn is_currently_showing_autosuggestion(&self) -> bool {
         self.current_autosuggestion().is_some()
     }
@@ -566,8 +582,8 @@ impl<'a, W: Write> Editor<'a, W> {
     pub fn print_current_buffer(&mut self, move_cursor_to_end_of_line: bool) -> io::Result<()> {
         let buf = cur_buf!(self);
         let buf_width = buf.width();
-        //let autosuggestion_width = self.current_autosuggestion().map_or(0, |x| x.width());
-        let new_prompt_and_buffer_width = buf_width + self.prompt_width;
+        let autosuggestion_extra_width = self.current_autosuggestion_extra_width();
+        let new_prompt_and_buffer_width = buf_width + self.prompt_width + autosuggestion_extra_width;
 
         let (w, _) =
             // when testing hardcode terminal size values
@@ -592,9 +608,8 @@ impl<'a, W: Write> Editor<'a, W> {
                    .history
                    .get_newest_match(self.cur_history_loc, buf) {
                 write!(self.out, "{}", color::Fg(color::Yellow))?;
-                let len = hist_match.print_rest(&mut self.out, buf.chars().len())?;
+                hist_match.print_rest(&mut self.out, buf.num_chars())?;
                 write!(self.out, "{}", color::Fg(color::Reset))?;
-                write!(self.out, "{}", cursor::Left(len as u16))?;
             }
         }
 
@@ -633,8 +648,9 @@ impl<'a, W: Write> Editor<'a, W> {
 
             // Now that we are on the right line, we must move the term cursor left or right
             // to match the true cursor.
-            let cursor_col_diff = buf_width as isize - buf.range_width(0, self.cursor) as isize -
-                                  cursor_line_diff * w as isize;
+            let cursor_col_diff = autosuggestion_extra_width as isize
+                                  + buf_width as isize - buf.range_width(0, self.cursor) as isize
+                                  - cursor_line_diff * w as isize;
             if cursor_col_diff > 0 {
                 try!(write!(self.out, "{}", cursor::Left(cursor_col_diff as u16)));
             } else if cursor_col_diff < 0 {
