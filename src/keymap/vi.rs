@@ -30,6 +30,7 @@ enum Mode {
     Delete(usize),
     MoveToChar(CharMovement),
     G,
+    Tilde,
 }
 
 struct ModeStack(Vec<Mode>);
@@ -345,7 +346,7 @@ impl<'a, W: Write> Vi<'a, W> {
         self.movement_reset = mode != Insert;
         self.mode_stack.push(mode);
 
-        if mode == Insert {
+        if mode == Insert || mode == Tilde {
             self.ed.current_buffer_mut().start_undo_group();
         }
     }
@@ -402,8 +403,12 @@ impl<'a, W: Write> Vi<'a, W> {
         self.ed.no_eol = self.mode() == Normal;
         self.movement_reset = self.mode() != Insert;
 
-        if last_mode == Insert {
+        if last_mode == Insert || last_mode == Tilde {
             self.ed.current_buffer_mut().end_undo_group();
+        }
+
+        if last_mode == Tilde {
+            self.ed.print_current_buffer(false).unwrap();
         }
     }
 
@@ -739,6 +744,35 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.count = 0;
                 Ok(())
             }
+            Key::Char('~') => {
+                // update the last command state
+                self.last_insert = None;
+                self.last_command.clear();
+                self.last_command.push(key);
+                self.last_count = self.count;
+
+                self.set_mode(Tilde);
+                for _ in 0..self.move_count_right() {
+                    let c = self.ed.current_buffer().char_after(self.ed.cursor()).unwrap();
+                    if c.is_lowercase() {
+                        try!(self.ed.delete_after_cursor());
+                        for c in c.to_uppercase() {
+                            try!(self.ed.insert_after_cursor(c));
+                        }
+                    }
+                    else if c.is_uppercase() {
+                        try!(self.ed.delete_after_cursor());
+                        for c in c.to_lowercase() {
+                            try!(self.ed.insert_after_cursor(c));
+                        }
+                    }
+                    else {
+                        try!(self.ed.move_cursor_right(1));
+                    }
+                }
+                self.pop_mode();
+                Ok(())
+            }
             Key::Char('u') => {
                 let count = self.move_count();
                 self.count = 0;
@@ -963,6 +997,7 @@ impl<'a, W: Write> KeyMap<'a, W, Vi<'a, W>> for Vi<'a, W> {
             Mode::Delete(_) => self.handle_key_delete_or_change(key),
             Mode::MoveToChar(movement) => self.handle_key_move_to_char(key, movement),
             Mode::G => self.handle_key_g(key),
+            Mode::Tilde => unreachable!(),
         }
     }
 
@@ -3533,5 +3568,129 @@ mod tests {
             Char('u'),
         ]);
         assert_eq!(String::from(map), "replace some words");
+    }
+
+    #[test]
+    /// test tilde
+    fn tilde_basic() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("tilde").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('~'),
+        ]);
+        assert_eq!(String::from(map), "tildE");
+    }
+
+    #[test]
+    /// test tilde
+    fn tilde_basic2() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("tilde").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('~'),
+            Char('~'),
+        ]);
+        assert_eq!(String::from(map), "tilde");
+    }
+
+    #[test]
+    /// test tilde
+    fn tilde_move() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("tilde").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('~'),
+            Char('~'),
+        ]);
+        assert_eq!(String::from(map), "TIlde");
+    }
+
+
+    #[test]
+    /// test tilde
+    fn tilde_repeat() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("tilde").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('~'),
+            Char('.'),
+        ]);
+        assert_eq!(String::from(map), "tilde");
+    }
+
+    #[test]
+    /// test tilde
+    fn tilde_count() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("tilde").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('1'),
+            Char('0'),
+            Char('~'),
+        ]);
+        assert_eq!(String::from(map), "TILDE");
+    }
+
+    #[test]
+    /// test tilde
+    fn tilde_count_short() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("TILDE").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('2'),
+            Char('~'),
+        ]);
+        assert_eq!(String::from(map), "tiLDE");
+    }
+
+    #[test]
+    /// test tilde
+    fn tilde_nocase() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("ti_lde").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('0'),
+            Char('6'),
+            Char('~'),
+        ]);
+        assert_eq!(String::from(map), "TI_LDE");
     }
 }
