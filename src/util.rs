@@ -1,4 +1,9 @@
 use std::borrow::Cow;
+use unicode_width::*;
+
+pub fn width<S: AsRef<str>>(s: S) -> usize {
+    remove_codes(s.as_ref()).width()
+}
 
 pub fn find_longest_common_prefix<T: Clone + Eq>(among: &[Vec<T>]) -> Option<Vec<T>> {
     if among.len() == 0 {
