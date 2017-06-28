@@ -601,6 +601,19 @@ impl<'a, W: Write> Editor<'a, W> {
         let buf = cur_buf!(self);
         let buf_width = buf.width();
 
+        // Don't let the cursor go over the end!
+        let buf_num_chars = buf.num_chars();
+        if buf_num_chars < self.cursor {
+            self.cursor = buf_num_chars;
+        }
+
+        // Can't move past the last character in vi normal mode
+        if self.no_eol {
+            if self.cursor >= 1 && self.cursor == buf_num_chars {
+                self.cursor -= 1;
+            }
+        }
+
         // Width of the current buffer lines (including autosuggestion)
         let buf_widths = match self.current_autosuggestion() {
             Some(suggestion) => suggestion.width(),
@@ -664,19 +677,6 @@ impl<'a, W: Write> Editor<'a, W> {
         // at the end of the line, move the cursor down a line
         if new_total_width % w == 0 {
             try!(write!(self.out, "\r\n"));
-        }
-
-        // Don't let the cursor go over the end!
-        let buf_num_chars = buf.num_chars();
-        if buf_num_chars < self.cursor {
-            self.cursor = buf_num_chars;
-        }
-
-        // can't move past the last character in vi normal mode
-        if self.no_eol {
-            if self.cursor >= 1 && self.cursor == buf_num_chars {
-                self.cursor -= 1;
-            }
         }
 
         self.term_cursor_line = (new_total_width_to_cursor + w) / w;
