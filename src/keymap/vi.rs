@@ -408,7 +408,7 @@ impl<'a, W: Write> Vi<'a, W> {
         }
 
         if last_mode == Tilde {
-            self.ed.print_current_buffer(false).unwrap();
+            self.ed.print_current_buffer().unwrap();
         }
     }
 

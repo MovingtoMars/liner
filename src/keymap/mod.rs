@@ -27,8 +27,7 @@ pub trait KeyMap<'a, W: Write, T>: From<T> {
             }
             Key::Char('\t') => try!(self.editor_mut().complete(handler)),
             Key::Char('\n') => {
-                try!(self.editor_mut().handle_newline());
-                done = true;
+                done = try!(self.editor_mut().handle_newline());
             }
             Key::Ctrl('f') if self.editor().is_currently_showing_autosuggestion() => {
                 try!(self.editor_mut().accept_autosuggestion());

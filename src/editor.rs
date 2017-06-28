@@ -126,7 +126,7 @@ impl<'a, W: Write> Editor<'a, W> {
             no_eol: false,
         };
 
-        try!(ed.print_current_buffer(true));
+        try!(ed.print_current_buffer());
         Ok(ed)
     }
 
@@ -150,11 +150,19 @@ impl<'a, W: Write> Editor<'a, W> {
         self.cursor
     }
 
-    pub fn handle_newline(&mut self) -> io::Result<()> {
-        try!(self.print_current_buffer(true));
-        try!(self.out.write(b"\r\n"));
-        self.show_completions_hint = false;
-        Ok(())
+    // XXX: Returning a bool to indicate doneness is a bit awkward, maybe change it
+    pub fn handle_newline(&mut self) -> io::Result<bool> {
+        let char_before_cursor = cur_buf!(self).char_before(self.cursor);
+        if char_before_cursor == Some('\\') {
+            // self.insert_after_cursor('\r')?;
+            self.insert_after_cursor('\n')?;
+            Ok(false)
+        } else {
+            self.move_cursor_to_end_of_line()?;
+            try!(self.out.write(b"\r\n"));
+            self.show_completions_hint = false;
+            Ok(true)
+        }
     }
 
     pub fn flush(&mut self) -> io::Result<()> {
@@ -167,19 +175,31 @@ impl<'a, W: Write> Editor<'a, W> {
     /// Returns `Ok(false)` if there was no action to undo.
     pub fn undo(&mut self) -> io::Result<bool> {
         let did = cur_buf_mut!(self).undo();
-        try!(self.print_current_buffer(did));
+        if did {
+            self.move_cursor_to_end_of_line()?;
+        } else {
+            self.print_current_buffer()?;
+        }
         Ok(did)
     }
 
     pub fn redo(&mut self) -> io::Result<bool> {
         let did = cur_buf_mut!(self).redo();
-        try!(self.print_current_buffer(did));
+        if did {
+            self.move_cursor_to_end_of_line()?;
+        } else {
+            self.print_current_buffer()?;
+        }
         Ok(did)
     }
 
     pub fn revert(&mut self) -> io::Result<bool> {
         let did = cur_buf_mut!(self).revert();
-        try!(self.print_current_buffer(did));
+        if did {
+            self.move_cursor_to_end_of_line()?;
+        } else {
+            self.print_current_buffer()?;
+        }
         Ok(did)
     }
 
@@ -268,7 +288,7 @@ impl<'a, W: Write> Editor<'a, W> {
                 try!(write!(self.out, "\r\n"));
                 try!(self.print_completion_list(&completions[..]));
                 try!(write!(self.out, "\r\n"));
-                try!(self.print_current_buffer(false));
+                try!(self.print_current_buffer());
 
                 self.show_completions_hint = false;
             } else {
@@ -313,14 +333,14 @@ impl<'a, W: Write> Editor<'a, W> {
             let moved = cur_buf_mut!(self).remove(start, self.cursor);
             self.cursor -= moved;
         }
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Clears the screen then prints the prompt and current buffer.
     pub fn clear(&mut self) -> io::Result<()> {
         try!(write!(self.out, "{}{}", clear::All, cursor::Goto(1, 1)));
         self.term_cursor_line = 1;
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Move up (backwards) in history.
@@ -329,17 +349,17 @@ impl<'a, W: Write> Editor<'a, W> {
             if i > 0 {
                 self.cur_history_loc = Some(i - 1);
             } else {
-                return self.print_current_buffer(false);
+                return self.print_current_buffer();
             }
         } else {
             if self.context.history.len() > 0 {
                 self.cur_history_loc = Some(self.context.history.len() - 1);
             } else {
-                return self.print_current_buffer(false);
+                return self.print_current_buffer();
             }
         }
 
-        self.print_current_buffer(true)
+        self.move_cursor_to_end_of_line()
     }
 
     /// Move down (forwards) in history, or to the new buffer if we reach the end of history.
@@ -350,9 +370,9 @@ impl<'a, W: Write> Editor<'a, W> {
             } else {
                 self.cur_history_loc = None;
             }
-            self.print_current_buffer(true)
+            self.move_cursor_to_end_of_line()
         } else {
-            self.print_current_buffer(false)
+            self.print_current_buffer()
         }
     }
 
@@ -360,10 +380,10 @@ impl<'a, W: Write> Editor<'a, W> {
     pub fn move_to_start_of_history(&mut self) -> io::Result<()> {
         if self.context.history.len() > 0 {
             self.cur_history_loc = Some(0);
-            self.print_current_buffer(true)
+            self.move_cursor_to_end_of_line()
         } else {
             self.cur_history_loc = None;
-            self.print_current_buffer(false)
+            self.print_current_buffer()
         }
     }
 
@@ -371,9 +391,9 @@ impl<'a, W: Write> Editor<'a, W> {
     pub fn move_to_end_of_history(&mut self) -> io::Result<()> {
         if self.cur_history_loc.is_some() {
             self.cur_history_loc = None;
-            self.print_current_buffer(true)
+            self.move_cursor_to_end_of_line()
         } else {
-            self.print_current_buffer(false)
+            self.print_current_buffer()
         }
     }
 
@@ -397,7 +417,7 @@ impl<'a, W: Write> Editor<'a, W> {
         }
 
         self.cursor += cs.len();
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Deletes the character directly before the cursor, moving the cursor to the left.
@@ -409,7 +429,7 @@ impl<'a, W: Write> Editor<'a, W> {
             self.cursor -= 1;
         }
 
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Deletes the character directly after the cursor. The cursor does not move.
@@ -422,14 +442,14 @@ impl<'a, W: Write> Editor<'a, W> {
                 buf.remove(self.cursor, self.cursor + 1);
             }
         }
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Deletes every character preceding the cursor until the beginning of the line.
     pub fn delete_all_before_cursor(&mut self) -> io::Result<()> {
         cur_buf_mut!(self).remove(0, self.cursor);
         self.cursor = 0;
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Deletes every character after the cursor until the end of the line.
@@ -438,7 +458,7 @@ impl<'a, W: Write> Editor<'a, W> {
             let buf = cur_buf_mut!(self);
             buf.truncate(self.cursor);
         }
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Deletes every character from the cursor until the given position.
@@ -449,7 +469,7 @@ impl<'a, W: Write> Editor<'a, W> {
                        cmp::max(self.cursor, position));
             self.cursor = cmp::min(self.cursor, position);
         }
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Deletes every character from the cursor until the given position, inclusive.
@@ -460,7 +480,7 @@ impl<'a, W: Write> Editor<'a, W> {
                        cmp::max(self.cursor + 1, position + 1));
             self.cursor = cmp::min(self.cursor, position);
         }
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Moves the cursor to the left by `count` characters.
@@ -472,7 +492,7 @@ impl<'a, W: Write> Editor<'a, W> {
 
         self.cursor -= count;
 
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Moves the cursor to the right by `count` characters.
@@ -488,7 +508,7 @@ impl<'a, W: Write> Editor<'a, W> {
             self.cursor += count;
         }
 
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Moves the cursor to `pos`. If `pos` is past the end of the buffer, it will be clamped.
@@ -498,19 +518,19 @@ impl<'a, W: Write> Editor<'a, W> {
         if self.cursor > buf_len {
             self.cursor = buf_len;
         }
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Moves the cursor to the start of the line.
     pub fn move_cursor_to_start_of_line(&mut self) -> io::Result<()> {
         self.cursor = 0;
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     /// Moves the cursor to the end of the line.
     pub fn move_cursor_to_end_of_line(&mut self) -> io::Result<()> {
         self.cursor = cur_buf!(self).num_chars();
-        self.print_current_buffer(false)
+        self.print_current_buffer()
     }
 
     pub fn cursor_is_at_end_of_line(&self) -> bool {
@@ -545,7 +565,7 @@ impl<'a, W: Write> Editor<'a, W> {
                 }
             }
         }
-        self.print_current_buffer(true)
+        self.move_cursor_to_end_of_line()
     }
 
     pub fn current_autosuggestion(&self) -> Option<&Buffer> {
@@ -558,32 +578,25 @@ impl<'a, W: Write> Editor<'a, W> {
         }
     }
 
-    // XXX: better name?
-    pub fn current_autosuggestion_extra(&self) -> Option<String> {
-        self.current_autosuggestion().map(|s| s.chars().skip(cur_buf!(self).num_chars()).collect())
-    }
-
-    // XXX: better name?
-    /// Gets the width of the part of the autosuggestion that hasn't been typed.
-    pub fn current_autosuggestion_extra_width(&self) -> usize {
-        match self.current_autosuggestion() {
-            // XXX: subtracting widths might cause problems if autosugestion boundary is between
-            // two characters with a modified width when placed together
-            Some(suggestion) => suggestion.width() - cur_buf!(self).width(),
-            None => 0,
-        }
-    }
-
     pub fn is_currently_showing_autosuggestion(&self) -> bool {
         self.current_autosuggestion().is_some()
     }
 
     /// Deletes the displayed prompt and buffer, replacing them with the current prompt and buffer
-    pub fn print_current_buffer(&mut self, move_cursor_to_end_of_line: bool) -> io::Result<()> {
-        let buf = cur_buf!(self);
-        let buf_width = buf.width();
-        let autosuggestion_extra_width = self.current_autosuggestion_extra_width();
-        let new_prompt_and_buffer_width = buf_width + self.prompt_width + autosuggestion_extra_width;
+    pub fn print_current_buffer(&mut self) -> io::Result<()> {
+        fn calc_width(prompt_width: usize, buf_widths: Vec<usize>, terminal_width: usize) -> usize {
+            let mut total = 0;
+
+            for line in buf_widths {
+                if total % terminal_width != 0 {
+                    total = ((total / terminal_width) + 1) * terminal_width;
+                }
+
+                total += prompt_width + line;
+            }
+
+            total
+        }
 
         let (w, _) =
             // when testing hardcode terminal size values
@@ -591,7 +604,26 @@ impl<'a, W: Write> Editor<'a, W> {
             // otherwise pull values from termion
             else { try!(termion::terminal_size()) };
         let w = w as usize;
-        let new_num_lines = (new_prompt_and_buffer_width + w) / w;
+
+        let buf = cur_buf!(self);
+        let buf_width = buf.width();
+
+        // Width of the current buffer lines (including autosuggestion)
+        let buf_widths = match self.current_autosuggestion() {
+            Some(suggestion) => suggestion.width(),
+            None => buf_width,
+        };
+        // Width of the current buffer lines (including autosuggestion) from the start to the cursor
+        let buf_widths_to_cursor = match self.current_autosuggestion() {
+            Some(suggestion) => suggestion.range_width(0, self.cursor),
+            None => buf.range_width(0, self.cursor),
+        };
+
+        // Total number of terminal spaces taken up by prompt and buffer
+        let new_total_width = calc_width(self.prompt_width, buf_widths, w);
+        let new_total_width_to_cursor = calc_width(self.prompt_width, buf_widths_to_cursor, w);
+
+        let new_num_lines = (new_total_width + w) / w;
 
         // Move the term cursor to the same line as the prompt.
         if self.term_cursor_line > 1 {
@@ -600,31 +632,51 @@ impl<'a, W: Write> Editor<'a, W> {
         // Move the cursor to the start of the line then clear everything after. Write the prompt
         try!(write!(self.out, "\r{}{}", clear::AfterCursor, self.prompt));
 
-        try!(buf.print(&mut self.out));
+        // If we have an autosuggestion, we make the autosuggestion the buffer we print out.
+        // We get the number of bytes in the buffer (but NOT the autosuggestion).
+        // Then, we loop and subtract from that number until it's 0, in which case we are printing
+        // the autosuggestion from here on (in a different color).
+        let lines = match self.current_autosuggestion() {
+            Some(suggestion) => suggestion.lines(),
+            None => buf.lines(),
+        };
+        let mut buf_num_remaining_bytes = buf.num_bytes();
 
-        // Display autosuggestion
-        if self.show_autosuggestions {
-            if let Some(hist_match) = self.context
-                   .history
-                   .get_newest_match(self.cur_history_loc, buf) {
+        for (i, line) in lines.iter().enumerate() {
+            if i > 0 {
+                try!(write!(self.out, "{}", cursor::Right(self.prompt_width as u16)));
+            }
+
+            if buf_num_remaining_bytes == 0 {
+                write!(self.out, "{}", line)?;
+            } else if line.len() > buf_num_remaining_bytes {
+                write!(self.out, "{}", &line[..buf_num_remaining_bytes])?;
                 write!(self.out, "{}", color::Fg(color::Yellow))?;
-                hist_match.print_rest(&mut self.out, buf.num_chars())?;
-                write!(self.out, "{}", color::Fg(color::Reset))?;
+                write!(self.out, "{}", &line[buf_num_remaining_bytes..])?;
+                buf_num_remaining_bytes = 0;
+            } else {
+                buf_num_remaining_bytes -= line.len();
+                write!(self.out, "{}", line)?;
+            }
+
+            if i + 1 < lines.len() {
+                write!(self.out, "\r\n")?;
             }
         }
 
-        if new_prompt_and_buffer_width % w == 0 {
-            // at the end of the line, move the cursor down a line
+        if self.is_currently_showing_autosuggestion() {
+            write!(self.out, "{}", color::Fg(color::Reset))?;
+        }
+
+        // at the end of the line, move the cursor down a line
+        if new_total_width % w == 0 {
             try!(write!(self.out, "\r\n"));
         }
 
+        // Don't let the cursor go over the end!
         let buf_num_chars = buf.num_chars();
-        if move_cursor_to_end_of_line {
+        if buf_num_chars < self.cursor {
             self.cursor = buf_num_chars;
-        } else {
-            if buf_num_chars < self.cursor {
-                self.cursor = buf_num_chars;
-            }
         }
 
         // can't move past the last character in vi normal mode
@@ -634,28 +686,25 @@ impl<'a, W: Write> Editor<'a, W> {
             }
         }
 
-        self.term_cursor_line = (self.prompt_width + buf.range_width(0, self.cursor) + w) / w;
+        self.term_cursor_line = (new_total_width_to_cursor + w) / w;
 
-        if !move_cursor_to_end_of_line || self.no_eol {
-            // The term cursor is now on the bottom line. We may need to move the term cursor up
-            // to the line where the true cursor is.
-            let cursor_line_diff = new_num_lines as isize - self.term_cursor_line as isize;
-            if cursor_line_diff > 0 {
-                try!(write!(self.out, "{}", cursor::Up(cursor_line_diff as u16)));
-            } else if cursor_line_diff < 0 {
-                unreachable!();
-            }
+        // The term cursor is now on the bottom line. We may need to move the term cursor up
+        // to the line where the true cursor is.
+        let cursor_line_diff = new_num_lines as isize - self.term_cursor_line as isize;
+        if cursor_line_diff > 0 {
+            try!(write!(self.out, "{}", cursor::Up(cursor_line_diff as u16)));
+        } else if cursor_line_diff < 0 {
+            unreachable!();
+        }
 
-            // Now that we are on the right line, we must move the term cursor left or right
-            // to match the true cursor.
-            let cursor_col_diff = autosuggestion_extra_width as isize
-                                  + buf_width as isize - buf.range_width(0, self.cursor) as isize
-                                  - cursor_line_diff * w as isize;
-            if cursor_col_diff > 0 {
-                try!(write!(self.out, "{}", cursor::Left(cursor_col_diff as u16)));
-            } else if cursor_col_diff < 0 {
-                try!(write!(self.out, "{}", cursor::Right((-cursor_col_diff) as u16)));
-            }
+        // Now that we are on the right line, we must move the term cursor left or right
+        // to match the true cursor.
+        let cursor_col_diff = new_total_width as isize - new_total_width_to_cursor as isize
+                              - cursor_line_diff * w as isize;
+        if cursor_col_diff > 0 {
+            try!(write!(self.out, "{}", cursor::Left(cursor_col_diff as u16)));
+        } else if cursor_col_diff < 0 {
+            try!(write!(self.out, "{}", cursor::Right((-cursor_col_diff) as u16)));
         }
 
         self.out.flush()

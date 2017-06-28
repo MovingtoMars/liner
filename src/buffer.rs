@@ -176,10 +176,6 @@ impl Buffer {
         s.len()
     }
 
-    pub fn width(&self) -> usize {
-        self.range_width(0, self.num_chars())
-    }
-
     pub fn char_before(&self, cursor: usize) -> Option<char> {
         if cursor == 0 {
             None
@@ -226,8 +222,16 @@ impl Buffer {
         self.data[start..end].iter().cloned().collect()
     }
 
-    pub fn range_width(&self, start: usize, end: usize) -> usize {
-        self.range(start, end)[..].width()
+    pub fn width(&self) -> Vec<usize> {
+        self.range_width(0, self.num_chars())
+    }
+
+    pub fn range_width(&self, start: usize, end: usize) -> Vec<usize> {
+        self.range(start, end).split('\n').map(|s| s.width()).collect()
+    }
+
+    pub fn lines(&self) -> Vec<String> {
+        self.data.split(|&c| c == '\n').map(|s| s.iter().cloned().collect()).collect()
     }
 
     pub fn chars(&self) -> ::std::slice::Iter<char> {
