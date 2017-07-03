@@ -19,9 +19,14 @@ pub struct History {
     /// Store a filename to save history into; if None don't save history
     file_name: Option<String>,
     /// Maximal number of buffers stored in the memory
+    /// TODO: just make this public?
     max_size: usize,
     /// Maximal number of lines stored in the file
+    // TODO: just make this public?
     max_file_size: usize,
+
+    // TODO set from environment variable?
+    pub append_duplicate_entries: bool,
 }
 
 impl History {
@@ -32,6 +37,7 @@ impl History {
             file_name: None,
             max_size: DEFAULT_MAX_SIZE,
             max_file_size: DEFAULT_MAX_SIZE,
+            append_duplicate_entries: false,
         }
     }
 
@@ -44,14 +50,18 @@ impl History {
     /// size has been met. If writing to the disk is enabled, this function will be used for
     /// logging history to the designated history file.
     pub fn push(&mut self, new_item: Buffer) -> io::Result<()> {
-
         let mut ret = Ok(());
-        self.file_name.as_ref().map(|name| {
-            ret = self.write_to_disk(&new_item, name);
-        });
+        self.file_name
+            .as_ref()
+            .map(|name| { ret = self.write_to_disk(&new_item, name); });
 
         // buffers[0] is the oldest entry
         // the new entry goes to the end
+        if !self.append_duplicate_entries &&
+            self.buffers.back().map(|b| b.to_string()) == Some(new_item.to_string())
+        {
+            return Ok(());
+        }
         self.buffers.push_back(new_item);
         while self.buffers.len() > self.max_size {
             self.buffers.pop_front();
@@ -61,12 +71,16 @@ impl History {
 
     /// Go through the history and try to find a buffer which starts the same as the new buffer
     /// given to this function as argument.
-    pub fn get_newest_match<'a, 'b>(&'a self, curr_position: Option<usize>, new_buff: &'b Buffer) -> Option<&'a Buffer> {
+    pub fn get_newest_match<'a, 'b>(
+        &'a self,
+        curr_position: Option<usize>,
+        new_buff: &'b Buffer,
+    ) -> Option<&'a Buffer> {
         let pos = curr_position.unwrap_or(self.buffers.len());
         for iter in (0..pos).rev() {
             if let Some(tested) = self.buffers.get(iter) {
                 if tested.starts_with(new_buff) {
-                    return self.buffers.get(iter)
+                    return self.buffers.get(iter);
                 }
             }
         }
@@ -100,7 +114,12 @@ impl History {
     pub fn load_history(&mut self) -> io::Result<()> {
         let file_name = match self.file_name.clone() {
             Some(name) => name,
-            None => return Err(Error::new(ErrorKind::Other, "Liner: file name not specified")),
+            None => {
+                return Err(Error::new(
+                    ErrorKind::Other,
+                    "Liner: file name not specified",
+                ))
+            }
         };
         let file = try!(OpenOptions::new().read(true).open(file_name));
         let reader = BufReader::new(file);
@@ -117,7 +136,11 @@ impl History {
     /// This function is not part of the public interface.
     /// XXX: include more information in the file (like fish does)
     fn write_to_disk(&self, new_item: &Buffer, file_name: &String) -> io::Result<()> {
-        let ret = match OpenOptions::new().read(true).write(true).create(true).open(file_name) {
+        let ret = match OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(file_name) {
             Ok(mut file) => {
                 // Determine the number of commands stored and the file length.
                 let (file_length, commands_stored) = {
