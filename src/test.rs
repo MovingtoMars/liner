@@ -77,7 +77,9 @@ fn test_in_memory_history_truncating() {
     h.set_max_size(2);
     for _ in 0..4 {
         h.push(Buffer::from("a")).unwrap();
+        h.push(Buffer::from("b")).unwrap();
     }
+    h.commit_history();
     assert_eq!(h.len(), 2);
 }
 
@@ -93,6 +95,7 @@ fn test_in_file_history_truncating() {
         for _ in 0..20 {
             h.push(Buffer::from("a")).unwrap();
         }
+        h.commit_history();
     }
 
     let f = fs::File::open(tmp_file.clone()).unwrap();

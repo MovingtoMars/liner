@@ -68,10 +68,11 @@ impl History {
                         let max_file_size = max_size.load(Ordering::Relaxed);
                         let _ = write_to_disk(max_file_size, &command, &filepath);
                     }
-                    sleep(Duration::from_millis(1));
+                    sleep(Duration::from_millis(100));
                 }
 
-                if let Ok((command, filepath)) = receiver.try_recv() {
+                // Deplete the receiver of commands to write, before exiting the thread.
+                while let Ok((command, filepath)) = receiver.try_recv() {
                     let max_file_size = max_size.load(Ordering::Relaxed);
                     let _ = write_to_disk(max_file_size, &command, &filepath);
                 }
@@ -105,6 +106,7 @@ impl History {
         {
             return Ok(());
         }
+
         self.buffers.push_back(new_item);
         while self.buffers.len() > self.max_size {
             self.buffers.pop_front();
@@ -242,14 +244,14 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
                 try!(file.read_to_end(&mut buffer));
                 try!(file.set_len(0));
                 try!(io::copy(&mut buffer.as_slice(), &mut file));
-
             }
 
             // Seek to end for appending
             try!(file.seek(SeekFrom::End(0)));
             // Write the command to the history file.
             try!(file.write_all(String::from(new_item.clone()).as_bytes()));
-            try!(file.write(b"\n"));
+            try!(file.write_all(b"\n"));
+            file.flush()?;
 
             Ok(())
         }
