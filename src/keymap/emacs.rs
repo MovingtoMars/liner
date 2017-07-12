@@ -3,6 +3,7 @@ use termion::event::Key;
 
 use KeyMap;
 use Editor;
+use CursorPosition;
 
 pub struct Emacs<'a, W: Write> {
     ed: Editor<'a, W>,
@@ -90,79 +91,46 @@ enum EmacsMoveDir {
     Right,
 }
 
-impl EmacsMoveDir {
-    fn advance(&self, cursor: &mut usize, max: usize) -> bool {
-        if *self == EmacsMoveDir::Right && *cursor == max {
-            return false;
-        }
-        
-        if *self == EmacsMoveDir::Left && *cursor == 0 {
-            return false;
-        }
-
-        match *self {
-            EmacsMoveDir::Right => *cursor += 1,
-            EmacsMoveDir::Left => *cursor -= 1,
-        }
-
-        true
-    }
-}
-
-
 fn emacs_move_word<W: Write>(ed: &mut Editor<W>, direction: EmacsMoveDir) -> io::Result<()> {
-    enum State {
-        Word,
-        NonWord,
-    }
+    let (words, pos) = ed.get_words_and_cursor_position();
 
-    let mut cursor = ed.cursor();
-
-    {
-        let buf = ed.current_buffer();
-
-        let next_char = |cursor| {
-            match direction {
-                EmacsMoveDir::Right => buf.char_after(cursor),
-                EmacsMoveDir::Left => buf.char_before(cursor),
+    let word_index = match pos {
+        CursorPosition::InWord(i) => {
+            Some(i)
+        },
+        CursorPosition::OnWordLeftEdge(mut i) => {
+            if i > 0 && direction == EmacsMoveDir::Left {
+                i -= 1;
             }
-        };
+            Some(i)
+        },
+        CursorPosition::OnWordRightEdge(mut i) => {
+            if i < words.len() - 1 && direction == EmacsMoveDir::Right {
+                i += 1;
+            }
+            Some(i)
+        },
+        CursorPosition::InSpace(left, right) => {
+            match direction {
+                EmacsMoveDir::Left => left,
+                EmacsMoveDir::Right => right,
+            }
+        },
+    };
 
-        let mut state = match next_char(cursor) {
-            None => return Ok(()),
-            Some(c) => {
-                match c {
-                    c if is_emacs_word(c) => State::Word,
-                    _ => State::NonWord,
-                }
-            },
-        };
+    match word_index {
+        None => Ok(()),
+        Some(i) => {
+            let (start, end) = words[i];
 
-        // Skip non-words until a word is found, then stop at the character after the word
-        while direction.advance(&mut cursor, buf.num_chars()) {
-            let c = match next_char(cursor) {
-                Some(c) => c,
-                _ => break,
+            let new_cursor_pos = match direction {
+                EmacsMoveDir::Left => start,
+                EmacsMoveDir::Right => end,
             };
 
-            match state {
-                State::NonWord => match c {
-                    c if is_emacs_word(c) => state = State::Word,
-                    _ => {},
-                },
-                State::Word => match c {
-                    c if !is_emacs_word(c) => break,
-                    _ => {},
-                },
-            }
+            ed.move_cursor_to(new_cursor_pos)
         }
     }
-
-    ed.move_cursor_to(cursor)
-}
-
-fn is_emacs_word(c: char) -> bool {
-    c.is_alphanumeric()
 }
 
 #[cfg(test)]
