@@ -8,12 +8,17 @@ pub trait KeyMap<'a, W: Write, T>: From<T> {
     fn editor(&self) -> &Editor<'a, W>;
     fn editor_mut(&mut self) -> &mut Editor<'a, W>;
 
-    fn handle_key(&mut self, key: Key, handler: &mut EventHandler<W>) -> io::Result<bool> {
+    fn handle_key(&mut self, mut key: Key, handler: &mut EventHandler<W>) -> io::Result<bool> {
         let mut done = false;
 
         handler(Event::new(self.editor_mut(), EventKind::BeforeKey(key)));
 
         let is_empty = self.editor().current_buffer().is_empty();
+
+        if key == Key::Ctrl('h') {
+            // XXX: Might need to change this when remappable keybindings are added.
+            key = Key::Backspace;
+        }
 
         match key {
             Key::Ctrl('c') => {
