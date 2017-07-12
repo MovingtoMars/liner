@@ -152,4 +152,18 @@ mod tests {
 
         assert_eq!(map.ed.cursor(), 4);
     }
+
+    #[test]
+    /// ctrl-h should act as backspace
+    fn ctrl_h() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Emacs::new(ed);
+        map.ed.insert_str_after_cursor("not empty").unwrap();
+
+        let res = map.handle_key(Key::Ctrl('h'), &mut |_| {});
+        assert_eq!(res.is_ok(), true);
+        assert_eq!(map.ed.current_buffer().to_string(), "not empt".to_string());
+    }
 }
