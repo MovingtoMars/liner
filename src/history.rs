@@ -205,51 +205,47 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
         .open(file_name) {
         Ok(mut file) => {
             // The metadata contains the length of the file
-            let file_length = file.metadata().ok().map_or(0, |m| m.len() as usize);
+            let file_length = file.metadata().ok().map_or(0u64, |m| m.len());
             // 4K byte buffer for reading chunks of the file at once.
             let mut buffer = [0; 4096];
 
             // Determine the number of commands stored.
-            let commands_stored = {
-                let mut commands_stored = 0;
-                let mut file = File::open(file_name).unwrap();
+            {
+                let mut seek_point = 0u64;
+                let mut stored = 0;
+                let mut total_read = 0u64;
+                let mut rfile = File::open(file_name).unwrap();
                 loop {
-                    let read = file.read(&mut buffer)?;
+                    // Read 4K of bytes all at once into the buffer.
+                    let read = rfile.read(&mut buffer)? as u64;
+                    // If EOF is found, don't seek at all.
                     if read == 0 { break }
-                    commands_stored += count(&buffer, b'\n');
-                }
-                commands_stored
-            };
+                    // Count the number of commands that were found in the current buffer.
+                    let cmds_read = count(&buffer, b'\n');
+                    // If stored + read >= max file size, a seek point is in the current buffer.
+                    if stored + cmds_read >= max_file_size {
+                        for &byte in buffer.iter() {
+                            total_read += 1;
+                            if byte == b'\n' {
+                                stored += 1;
+                                if stored == max_file_size {
+                                    seek_point = total_read;
+                                    break
+                                }
+                            }
+                        }
 
-            // If the max history file size has been reached, truncate the file so that only
-            // N amount of commands are listed. To truncate the file, the seek point will be
-            // discovered by counting the number of bytes until N newlines have been found and
-            // then the file will be seeked to that point, copying all data after and rewriting
-            // the file with the first N lines removed.
-            if commands_stored >= max_file_size {
-                let seek_point = {
-                    let commands_to_delete = commands_stored - max_file_size + 1;
-                    let mut matched = 0;
-                    let mut bytes = 0;
-                    let file = File::open(file_name).unwrap();
-                    for byte in file.bytes() {
-                        if byte.unwrap_or(b' ') == b'\n' {
-                            matched += 1;
-                        }
-                        bytes += 1;
-                        if matched == commands_to_delete {
-                            break;
-                        }
+                        try!(file.seek(SeekFrom::Start(seek_point as u64)));
+                        let mut buffer: Vec<u8> = Vec::with_capacity((file_length - seek_point) as usize);
+                        try!(file.read_to_end(&mut buffer));
+                        try!(file.set_len(0));
+                        try!(io::copy(&mut buffer.as_slice(), &mut file));
+                    } else {
+                        total_read += read;
+                        stored += cmds_read;
                     }
-                    bytes as u64
-                };
-
-                try!(file.seek(SeekFrom::Start(seek_point)));
-                let mut buffer: Vec<u8> = Vec::with_capacity(file_length - seek_point as usize);
-                try!(file.read_to_end(&mut buffer));
-                try!(file.set_len(0));
-                try!(io::copy(&mut buffer.as_slice(), &mut file));
-            }
+                }
+            };
 
             // Seek to end for appending
             try!(file.seek(SeekFrom::End(0)));
