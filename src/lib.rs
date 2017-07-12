@@ -1,3 +1,4 @@
+extern crate bytecount;
 extern crate termion;
 extern crate unicode_width;
 

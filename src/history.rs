@@ -12,6 +12,8 @@ use std::sync::mpsc::{channel, Sender};
 use std::thread::{sleep, spawn, JoinHandle};
 use std::time::Duration;
 
+use bytecount::count;
+
 const DEFAULT_MAX_SIZE: usize = 1000;
 
 /// Structure encapsulating command history
@@ -202,18 +204,21 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
         .create(true)
         .open(file_name) {
         Ok(mut file) => {
-            // Determine the number of commands stored and the file length.
-            let (file_length, commands_stored) = {
+            // The metadata contains the length of the file
+            let file_length = file.metadata().ok().map_or(0, |m| m.len() as usize);
+            // 4K byte buffer for reading chunks of the file at once.
+            let mut buffer = [0; 4096];
+
+            // Determine the number of commands stored.
+            let commands_stored = {
                 let mut commands_stored = 0;
-                let mut file_length = 0;
-                let file = File::open(file_name).unwrap();
-                for byte in file.bytes() {
-                    if byte.unwrap_or(b' ') == b'\n' {
-                        commands_stored += 1;
-                    }
-                    file_length += 1;
+                let mut file = File::open(file_name).unwrap();
+                loop {
+                    let read = file.read(&mut buffer)?;
+                    if read == 0 { break }
+                    commands_stored += count(&buffer, b'\n');
                 }
-                (file_length, commands_stored)
+                commands_stored
             };
 
             // If the max history file size has been reached, truncate the file so that only
