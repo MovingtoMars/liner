@@ -19,5 +19,6 @@ name = "liner"
 name = "liner_test"
 
 [dependencies]
+bytecount = "0.1"
 termion = "1.4.0"
 unicode-width = "0.1.*"

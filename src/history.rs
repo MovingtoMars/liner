@@ -6,6 +6,13 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::ops::Index;
 use std::ops::IndexMut;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{channel, Sender};
+use std::thread::{sleep, spawn, JoinHandle};
+use std::time::Duration;
+
+use bytecount::count;
 
 const DEFAULT_MAX_SIZE: usize = 1000;
 
@@ -14,8 +21,6 @@ pub struct History {
     // TODO: this should eventually be private
     /// Vector of buffers to store history in
     pub buffers: VecDeque<Buffer>,
-    // TODO: Do we need this here? Ion can take care of this.
-    // pub previous_status: i32,
     /// Store a filename to save history into; if None don't save history
     file_name: Option<String>,
     /// Maximal number of buffers stored in the memory
@@ -23,20 +28,60 @@ pub struct History {
     max_size: usize,
     /// Maximal number of lines stored in the file
     // TODO: just make this public?
-    max_file_size: usize,
+    max_file_size: Arc<AtomicUsize>,
+    /// Handle to the background thread managing writes to the history file
+    bg_handle: Option<JoinHandle<()>>,
+    /// Signals the background thread to stop when dropping the struct
+    bg_stop: Arc<AtomicBool>,
+    /// Sends commands to write to the history file
+    sender: Sender<(Buffer, String)>,
 
     // TODO set from environment variable?
     pub append_duplicate_entries: bool,
 }
 
 impl History {
+    /// It's important to execute this function before exiting your program, as it will
+    /// ensure that all history data has been written to the disk.
+    pub fn commit_history(&mut self) {
+        // Signal the background thread to stop
+        self.bg_stop.store(true, Ordering::Relaxed);
+        // Wait for the background thread to stop
+        if let Some(handle) = self.bg_handle.take() {
+            let _ = handle.join();
+        }
+    }
+
     /// Create new History structure.
     pub fn new() -> History {
+        let max_file_size = Arc::new(AtomicUsize::new(DEFAULT_MAX_SIZE));
+        let bg_stop = Arc::new(AtomicBool::new(false));
+        let (sender, receiver) = channel();
+
+        let stop_signal = bg_stop.clone();
+        let max_size = max_file_size.clone();
         History {
             buffers: VecDeque::with_capacity(DEFAULT_MAX_SIZE),
             file_name: None,
+            sender: sender,
+            bg_handle: Some(spawn(move || {
+                while !stop_signal.load(Ordering::Relaxed) {
+                    if let Ok((command, filepath)) = receiver.try_recv() {
+                        let max_file_size = max_size.load(Ordering::Relaxed);
+                        let _ = write_to_disk(max_file_size, &command, &filepath);
+                    }
+                    sleep(Duration::from_millis(100));
+                }
+
+                // Deplete the receiver of commands to write, before exiting the thread.
+                while let Ok((command, filepath)) = receiver.try_recv() {
+                    let max_file_size = max_size.load(Ordering::Relaxed);
+                    let _ = write_to_disk(max_file_size, &command, &filepath);
+                }
+            })),
+            bg_stop: bg_stop,
             max_size: DEFAULT_MAX_SIZE,
-            max_file_size: DEFAULT_MAX_SIZE,
+            max_file_size: max_file_size,
             append_duplicate_entries: false,
         }
     }
@@ -50,10 +95,11 @@ impl History {
     /// size has been met. If writing to the disk is enabled, this function will be used for
     /// logging history to the designated history file.
     pub fn push(&mut self, new_item: Buffer) -> io::Result<()> {
-        let mut ret = Ok(());
         self.file_name
             .as_ref()
-            .map(|name| { ret = self.write_to_disk(&new_item, name); });
+            .map(|name| {
+                let _ = self.sender.send((new_item.clone(), name.to_owned()));
+            });
 
         // buffers[0] is the oldest entry
         // the new entry goes to the end
@@ -62,11 +108,12 @@ impl History {
         {
             return Ok(());
         }
+
         self.buffers.push_back(new_item);
         while self.buffers.len() > self.max_size {
             self.buffers.pop_front();
         }
-        ret
+        Ok(())
     }
 
     /// Go through the history and try to find a buffer which starts the same as the new buffer
@@ -107,7 +154,7 @@ impl History {
 
     /// Set maximal number of entries in history file
     pub fn set_max_file_size(&mut self, size: usize) {
-        self.max_file_size = size;
+        self.max_file_size.store(size, Ordering::Relaxed);
     }
 
     /// Load history from given file name
@@ -131,74 +178,6 @@ impl History {
         }
         Ok(())
     }
-
-    /// Perform write operation. If the history file does not exist, it will be created.
-    /// This function is not part of the public interface.
-    /// XXX: include more information in the file (like fish does)
-    fn write_to_disk(&self, new_item: &Buffer, file_name: &String) -> io::Result<()> {
-        let ret = match OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(file_name) {
-            Ok(mut file) => {
-                // Determine the number of commands stored and the file length.
-                let (file_length, commands_stored) = {
-                    let mut commands_stored = 0;
-                    let mut file_length = 0;
-                    let file = File::open(file_name).unwrap();
-                    for byte in file.bytes() {
-                        if byte.unwrap_or(b' ') == b'\n' {
-                            commands_stored += 1;
-                        }
-                        file_length += 1;
-                    }
-                    (file_length, commands_stored)
-                };
-
-                // If the max history file size has been reached, truncate the file so that only
-                // N amount of commands are listed. To truncate the file, the seek point will be
-                // discovered by counting the number of bytes until N newlines have been found and
-                // then the file will be seeked to that point, copying all data after and rewriting
-                // the file with the first N lines removed.
-                if commands_stored >= self.max_file_size {
-                    let seek_point = {
-                        let commands_to_delete = commands_stored - self.max_file_size + 1;
-                        let mut matched = 0;
-                        let mut bytes = 0;
-                        let file = File::open(file_name).unwrap();
-                        for byte in file.bytes() {
-                            if byte.unwrap_or(b' ') == b'\n' {
-                                matched += 1;
-                            }
-                            bytes += 1;
-                            if matched == commands_to_delete {
-                                break;
-                            }
-                        }
-                        bytes as u64
-                    };
-
-                    try!(file.seek(SeekFrom::Start(seek_point)));
-                    let mut buffer: Vec<u8> = Vec::with_capacity(file_length - seek_point as usize);
-                    try!(file.read_to_end(&mut buffer));
-                    try!(file.set_len(0));
-                    try!(io::copy(&mut buffer.as_slice(), &mut file));
-
-                }
-
-                // Seek to end for appending
-                try!(file.seek(SeekFrom::End(0)));
-                // Write the command to the history file.
-                try!(file.write_all(String::from(new_item.clone()).as_bytes()));
-                try!(file.write(b"\n"));
-
-                Ok(())
-            }
-            Err(message) => Err(message),
-        };
-        ret
-    }
 }
 
 impl Index<usize> for History {
@@ -213,4 +192,71 @@ impl IndexMut<usize> for History {
     fn index_mut(&mut self, index: usize) -> &mut Buffer {
         &mut self.buffers[index]
     }
+}
+
+/// Perform write operation. If the history file does not exist, it will be created.
+/// This function is not part of the public interface.
+/// XXX: include more information in the file (like fish does)
+fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io::Result<()> {
+    let ret = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(file_name) {
+        Ok(mut file) => {
+            // The metadata contains the length of the file
+            let file_length = file.metadata().ok().map_or(0u64, |m| m.len());
+            // 4K byte buffer for reading chunks of the file at once.
+            let mut buffer = [0; 4096];
+
+            // Determine the number of commands stored.
+            {
+                let mut seek_point = 0u64;
+                let mut stored = 0;
+                let mut total_read = 0u64;
+                let mut rfile = File::open(file_name).unwrap();
+                loop {
+                    // Read 4K of bytes all at once into the buffer.
+                    let read = rfile.read(&mut buffer)? as u64;
+                    // If EOF is found, don't seek at all.
+                    if read == 0 { break }
+                    // Count the number of commands that were found in the current buffer.
+                    let cmds_read = count(&buffer, b'\n');
+                    // If stored + read >= max file size, a seek point is in the current buffer.
+                    if stored + cmds_read >= max_file_size {
+                        for &byte in buffer.iter() {
+                            total_read += 1;
+                            if byte == b'\n' {
+                                stored += 1;
+                                if stored == max_file_size {
+                                    seek_point = total_read;
+                                    break
+                                }
+                            }
+                        }
+
+                        try!(file.seek(SeekFrom::Start(seek_point as u64)));
+                        let mut buffer: Vec<u8> = Vec::with_capacity((file_length - seek_point) as usize);
+                        try!(file.read_to_end(&mut buffer));
+                        try!(file.set_len(0));
+                        try!(io::copy(&mut buffer.as_slice(), &mut file));
+                    } else {
+                        total_read += read;
+                        stored += cmds_read;
+                    }
+                }
+            };
+
+            // Seek to end for appending
+            try!(file.seek(SeekFrom::End(0)));
+            // Write the command to the history file.
+            try!(file.write_all(String::from(new_item.clone()).as_bytes()));
+            try!(file.write_all(b"\n"));
+            file.flush()?;
+
+            Ok(())
+        }
+        Err(message) => Err(message),
+    };
+    ret
 }
