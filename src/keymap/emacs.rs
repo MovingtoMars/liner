@@ -3,6 +3,7 @@ use termion::event::Key;
 
 use KeyMap;
 use Editor;
+use CursorPosition;
 
 pub struct Emacs<'a, W: Write> {
     ed: Editor<'a, W>,
@@ -39,6 +40,8 @@ impl<'a, W: Write> Emacs<'a, W> {
             '<' => self.ed.move_to_start_of_history(),
             '>' => self.ed.move_to_end_of_history(),
             '\x7F' => self.ed.delete_word_before_cursor(true),
+            'f' => emacs_move_word(&mut self.ed, EmacsMoveDir::Right),
+            'b' => emacs_move_word(&mut self.ed, EmacsMoveDir::Left),
             'r' => {
                 try!(self.ed.revert());
                 Ok(())
@@ -79,6 +82,54 @@ impl<'a, W: Write> KeyMap<'a, W, Emacs<'a, W>> for Emacs<'a, W> {
 impl<'a, W: Write> From<Emacs<'a, W>> for String {
     fn from(emacs: Emacs<'a, W>) -> String {
         emacs.ed.into()
+    }
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum EmacsMoveDir {
+    Left,
+    Right,
+}
+
+fn emacs_move_word<W: Write>(ed: &mut Editor<W>, direction: EmacsMoveDir) -> io::Result<()> {
+    let (words, pos) = ed.get_words_and_cursor_position();
+
+    let word_index = match pos {
+        CursorPosition::InWord(i) => {
+            Some(i)
+        },
+        CursorPosition::OnWordLeftEdge(mut i) => {
+            if i > 0 && direction == EmacsMoveDir::Left {
+                i -= 1;
+            }
+            Some(i)
+        },
+        CursorPosition::OnWordRightEdge(mut i) => {
+            if i < words.len() - 1 && direction == EmacsMoveDir::Right {
+                i += 1;
+            }
+            Some(i)
+        },
+        CursorPosition::InSpace(left, right) => {
+            match direction {
+                EmacsMoveDir::Left => left,
+                EmacsMoveDir::Right => right,
+            }
+        },
+    };
+
+    match word_index {
+        None => Ok(()),
+        Some(i) => {
+            let (start, end) = words[i];
+
+            let new_cursor_pos = match direction {
+                EmacsMoveDir::Left => start,
+                EmacsMoveDir::Right => end,
+            };
+
+            ed.move_cursor_to(new_cursor_pos)
+        }
     }
 }
 
@@ -137,6 +188,26 @@ mod tests {
 
         assert_eq!(map.ed.cursor(), 3);
         assert_eq!(String::from(map), "left");
+    }
+
+    #[test]
+    fn move_word() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Emacs::new(ed);
+        map.editor_mut().insert_str_after_cursor("abc def ghi").unwrap();
+        assert_eq!(map.ed.cursor(), 11);
+
+        simulate_keys!(map, [Key::Alt('b')]);
+
+        // Move to `g`
+        assert_eq!(map.ed.cursor(), 8);
+
+        simulate_keys!(map, [Key::Alt('b'), Key::Alt('f')]);
+
+        // Move to the char after `f`
+        assert_eq!(map.ed.cursor(), 7);
     }
 
     #[test]
