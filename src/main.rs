@@ -78,10 +78,18 @@ fn main() {
                         println!("exiting...");
                         break;
                     }
-                    _ => panic!("error: {:?}", e),
+                    _ => {
+                        // Ensure that all writes to the history file
+                        // are written before exiting.
+                        con.history.commit_history();
+                        panic!("error: {:?}", e)
+                    },
                 }
             }
         }
 
     }
+
+    // Ensure that all writes to the history file are written before exiting.
+    con.history.commit_history();
 }

@@ -240,6 +240,7 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
                         try!(file.read_to_end(&mut buffer));
                         try!(file.set_len(0));
                         try!(io::copy(&mut buffer.as_slice(), &mut file));
+                        break
                     } else {
                         total_read += read;
                         stored += cmds_read;
