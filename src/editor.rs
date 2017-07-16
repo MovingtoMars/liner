@@ -123,6 +123,11 @@ impl<'a, W: Write> Editor<'a, W> {
         Ok(ed)
     }
 
+    /// None if we're on the new buffer, else the index of history
+    pub fn current_history_location(&self) -> Option<usize> {
+        self.cur_history_loc
+    }
+
     pub fn get_words_and_cursor_position(&self) -> (Vec<(usize, usize)>, CursorPosition) {
         let word_fn = &self.context.word_divider_fn;
         let words = word_fn(cur_buf!(self));

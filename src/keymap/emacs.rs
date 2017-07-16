@@ -7,11 +7,12 @@ use CursorPosition;
 
 pub struct Emacs<'a, W: Write> {
     ed: Editor<'a, W>,
+    last_arg_fetch_index: Option<usize>,
 }
 
 impl<'a, W: Write> Emacs<'a, W> {
     pub fn new(ed: Editor<'a, W>) -> Self {
-        Emacs { ed: ed }
+        Emacs { ed, last_arg_fetch_index: None }
     }
 
     fn handle_ctrl_key(&mut self, c: char) -> io::Result<()> {
@@ -46,13 +47,52 @@ impl<'a, W: Write> Emacs<'a, W> {
                 try!(self.ed.revert());
                 Ok(())
             }
+            '.' => self.handle_last_arg_fetch(),
             _ => Ok(()),
         }
+    }
+
+    fn handle_last_arg_fetch(&mut self) -> io::Result<()> {
+        // Empty history means no last arg to fetch.
+        if self.ed.context().history.len() == 0 {
+            return Ok(());
+        }
+
+        let history_index = match self.last_arg_fetch_index {
+            Some(0) => return Ok(()),
+            Some(x) => x - 1,
+            None => self.ed.current_history_location().unwrap_or(self.ed.context().history.len() - 1),
+        };
+
+        // If did a last arg fetch just before this, we need to delete it so it can be replaced by
+        // this last arg fetch.
+        if self.last_arg_fetch_index.is_some() {
+            let buffer_len = self.ed.current_buffer().num_chars();
+            if let Some(last_arg_len) = self.ed.current_buffer().last_arg().map(|x| x.len()) {
+                self.ed.delete_until(buffer_len - last_arg_len)?;
+            }
+        }
+
+        // Actually insert it
+        let buf = self.ed.context().history[history_index].clone();
+        if let Some(last_arg) = buf.last_arg() {
+            self.ed.insert_chars_after_cursor(last_arg)?;
+        }
+
+        // Edit the index in case the user does a last arg fetch again.
+        self.last_arg_fetch_index = Some(history_index);
+
+        Ok(())
     }
 }
 
 impl<'a, W: Write> KeyMap<'a, W, Emacs<'a, W>> for Emacs<'a, W> {
     fn handle_key_core(&mut self, key: Key) -> io::Result<()> {
+        match key {
+            Key::Alt('.') => {},
+            _ => self.last_arg_fetch_index = None,
+        }
+
         match key {
             Key::Char(c) => self.ed.insert_after_cursor(c),
             Key::Alt(c) => self.handle_alt_key(c),

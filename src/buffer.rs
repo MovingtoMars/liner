@@ -167,6 +167,10 @@ impl Buffer {
         self.undone_actions.clear();
     }
 
+    pub fn last_arg(&self) -> Option<&[char]> {
+        self.data.split(|&c| c == ' ').filter(|s| !s.is_empty()).last()
+    }
+
     pub fn num_chars(&self) -> usize {
         self.data.len()
     }
@@ -209,6 +213,7 @@ impl Buffer {
         self.push_action(act);
     }
 
+    // XXX rename, too confusing
     pub fn insert_from_buffer(&mut self, other: &Buffer) {
         let start = self.data.len();
         self.insert(start, &other.data[start..])
