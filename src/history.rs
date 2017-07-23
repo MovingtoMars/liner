@@ -217,14 +217,14 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
                 let mut rfile = File::open(file_name).unwrap();
                 loop {
                     // Read 4K of bytes all at once into the buffer.
-                    let read = rfile.read(&mut buffer)? as u64;
+                    let read = rfile.read(&mut buffer)?;
                     // If EOF is found, don't seek at all.
                     if read == 0 { break }
                     // Count the number of commands that were found in the current buffer.
-                    let cmds_read = count(&buffer, b'\n');
+                    let cmds_read = count(&buffer[0..read], b'\n');
                     // If stored + read >= max file size, a seek point is in the current buffer.
                     if stored + cmds_read >= max_file_size {
-                        for &byte in buffer.iter() {
+                        for &byte in buffer[0..read].iter() {
                             total_read += 1;
                             if byte == b'\n' {
                                 stored += 1;
@@ -242,7 +242,7 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
                         try!(io::copy(&mut buffer.as_slice(), &mut file));
                         break
                     } else {
-                        total_read += read;
+                        total_read += read as u64;
                         stored += cmds_read;
                     }
                 }
