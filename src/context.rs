@@ -84,6 +84,30 @@ impl Context {
         res
     }
 
+    /// Creates an `Editor` with an initial buffer and feeds it keypresses from stdin until the line is entered.
+    /// The output is stdout.
+    /// The returned line has the newline removed.
+    /// Before returning, will revert all changes to the history buffers.
+    pub fn read_line_buf<P: Into<String>>(&mut self,
+                                      prompt: P,
+                                      init_buffer: &str,
+                                      mut handler: &mut EventHandler<RawTerminal<Stdout>>)
+                                      -> io::Result<String> {
+        let res = {
+            let stdout = stdout().into_raw_mode().unwrap();
+            let mut ed = try!(Editor::new(stdout, prompt.into(), self));
+            let char_buf: Vec<char> = init_buffer.chars().collect();
+            try!(ed.insert_chars_after_cursor(&char_buf));
+            match self.key_bindings {
+                KeyBindings::Emacs => Self::handle_keys(keymap::Emacs::new(ed), handler),
+                KeyBindings::Vi => Self::handle_keys(keymap::Vi::new(ed), handler),
+            }
+        };
+
+        self.revert_all_history();
+        res
+    }
+
     fn handle_keys<'a, T, W: Write, M: KeyMap<'a, W, T>>(mut keymap: M,
                                                          mut handler: &mut EventHandler<W>)
                                                          -> io::Result<String>
