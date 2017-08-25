@@ -599,7 +599,14 @@ impl<'a, W: Write> Editor<'a, W> {
             // when testing hardcode terminal size values
             if cfg!(test) { (80, 24) }
             // otherwise pull values from termion
-            else { try!(termion::terminal_size()) };
+            else {
+                let (mut size_col, mut size_row) = try!(termion::terminal_size());
+                if size_col == 0 {
+                    size_col = 80;
+                    size_row = 24;
+                }
+                (size_col, size_row)
+            };
         let w = w as usize;
 
         let prompt_width = util::width(&self.prompt);
