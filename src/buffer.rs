@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use std::iter::FromIterator;
 use std::fmt::{self, Write as FmtWrite};
 
+/// A modification performed on a `Buffer`. These are used for the purpose of undo/redo.
 #[derive(Debug,Clone)]
 pub enum Action {
     Insert { start: usize, text: Vec<char> },
@@ -33,6 +34,9 @@ impl Action {
     }
 }
 
+/// A buffer for text in the line editor.
+///
+/// It keeps track of each action performed on it for use with undo/redo.
 #[derive(Debug, Clone)]
 pub struct Buffer {
     data: Vec<char>,

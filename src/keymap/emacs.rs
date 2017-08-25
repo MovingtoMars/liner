@@ -5,6 +5,12 @@ use KeyMap;
 use Editor;
 use CursorPosition;
 
+/// Emacs keybindings for `Editor`. This is the default for `Context::read_line()`.
+///
+/// ```
+/// let context = Context::new();
+/// context.key_bindings = KeyBindings::Emacs;
+/// ```
 pub struct Emacs<'a, W: Write> {
     ed: Editor<'a, W>,
     last_arg_fetch_index: Option<usize>,

@@ -290,6 +290,12 @@ fn find_char_rev(buf: &::buffer::Buffer, start: usize, ch: char, count: usize) -
         .map(|(i, _)| i)
 }
 
+/// Vi keybindings for `Editor`.
+///
+/// ```
+/// let context = Context::new();
+/// context.key_bindings = KeyBindings::Vi;
+/// ```
 pub struct Vi<'a, W: Write> {
     ed: Editor<'a, W>,
     mode_stack: ModeStack,

@@ -54,6 +54,7 @@ impl CursorPosition {
     }
 }
 
+/// The core line editor. Displays and provides editing for history and the new buffer.
 pub struct Editor<'a, W: Write> {
     prompt: String,
     out: W,
