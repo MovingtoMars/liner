@@ -77,12 +77,13 @@ impl Context {
 
     /// Same as `Context.read_line()`, but passes the provided initial buffer to the editor.
     ///
-    /// ```
+    /// ```no_run
     /// use liner::Context;
+    /// let mut context = Context::new();
     /// let line =
-    ///     Context::read_line_with_init_buffer("[prompt]$ ",
-    ///                                         |_| {},
-    ///                                         "some initial buffer").unwrap();
+    ///     context.read_line_with_init_buffer("[prompt]$ ",
+    ///                                        &mut |_| {},
+    ///                                        "some initial buffer");
     /// ```
     pub fn read_line_with_init_buffer<P: Into<String>, B: Into<Buffer>>(
         &mut self,

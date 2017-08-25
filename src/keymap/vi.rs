@@ -293,7 +293,8 @@ fn find_char_rev(buf: &::buffer::Buffer, start: usize, ch: char, count: usize) -
 /// Vi keybindings for `Editor`.
 ///
 /// ```
-/// let context = Context::new();
+/// use liner::*;
+/// let mut context = Context::new();
 /// context.key_bindings = KeyBindings::Vi;
 /// ```
 pub struct Vi<'a, W: Write> {
