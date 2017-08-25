@@ -155,7 +155,8 @@ impl<'a, W: Write> Editor<'a, W> {
             self.insert_after_cursor('\n')?;
             Ok(false)
         } else {
-            self.move_cursor_to_end_of_line()?;
+            self.cursor = cur_buf!(self).num_chars();
+            self._display(false)?;
             try!(self.out.write(b"\r\n"));
             self.show_completions_hint = false;
             Ok(true)
@@ -579,8 +580,7 @@ impl<'a, W: Write> Editor<'a, W> {
         self.current_autosuggestion().is_some()
     }
 
-    /// Deletes the displayed prompt and buffer, replacing them with the current prompt and buffer
-    pub fn display(&mut self) -> io::Result<()> {
+    fn _display(&mut self, show_autosuggest: bool) -> io::Result<()> {
         fn calc_width(prompt_width: usize, buf_widths: Vec<usize>, terminal_width: usize) -> usize {
             let mut total = 0;
 
@@ -647,9 +647,13 @@ impl<'a, W: Write> Editor<'a, W> {
         // We get the number of bytes in the buffer (but NOT the autosuggestion).
         // Then, we loop and subtract from that number until it's 0, in which case we are printing
         // the autosuggestion from here on (in a different color).
-        let lines = match self.current_autosuggestion() {
-            Some(suggestion) => suggestion.lines(),
-            None => buf.lines(),
+        let lines = if show_autosuggest {
+            match self.current_autosuggestion() {
+                Some(suggestion) => suggestion.lines(),
+                None => buf.lines(),
+            } 
+        } else {
+            buf.lines()
         };
         let mut buf_num_remaining_bytes = buf.num_bytes();
 
@@ -706,6 +710,11 @@ impl<'a, W: Write> Editor<'a, W> {
         }
 
         self.out.flush()
+    }
+
+    /// Deletes the displayed prompt and buffer, replacing them with the current prompt and buffer
+    pub fn display(&mut self) -> io::Result<()> {
+        self._display(true)
     }
 }
 
