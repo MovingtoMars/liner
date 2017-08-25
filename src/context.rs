@@ -1,4 +1,4 @@
-use std::io::{self, Stdout, stdout, stdin, Write};
+use std::io::{self, stdin, stdout, Stdout, Write};
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 
@@ -67,13 +67,32 @@ impl Context {
     /// The output is stdout.
     /// The returned line has the newline removed.
     /// Before returning, will revert all changes to the history buffers.
-    pub fn read_line<P: Into<String>>(&mut self,
-                                      prompt: P,
-                                      mut handler: &mut EventHandler<RawTerminal<Stdout>>)
-                                      -> io::Result<String> {
+    pub fn read_line<P: Into<String>>(
+        &mut self,
+        prompt: P,
+        mut handler: &mut EventHandler<RawTerminal<Stdout>>,
+    ) -> io::Result<String> {
+        self.read_line_with_init_buffer(prompt, handler, Buffer::new())
+    }
+
+    /// Same as `Context.read_line()`, but passes the provided initial buffer to the editor.
+    ///
+    /// ```
+    /// use liner::Context;
+    /// let line =
+    ///     Context::read_line_with_init_buffer("[prompt]$ ",
+    ///                                         |_| {},
+    ///                                         "some initial buffer").unwrap();
+    /// ```
+    pub fn read_line_with_init_buffer<P: Into<String>, B: Into<Buffer>>(
+        &mut self,
+        prompt: P,
+        mut handler: &mut EventHandler<RawTerminal<Stdout>>,
+        buffer: B,
+    ) -> io::Result<String> {
         let res = {
             let stdout = stdout().into_raw_mode().unwrap();
-            let ed = try!(Editor::new(stdout, prompt.into(), self));
+            let ed = try!(Editor::new_with_init_buffer(stdout, prompt, self, buffer));
             match self.key_bindings {
                 KeyBindings::Emacs => Self::handle_keys(keymap::Emacs::new(ed), handler),
                 KeyBindings::Vi => Self::handle_keys(keymap::Vi::new(ed), handler),
@@ -84,10 +103,12 @@ impl Context {
         res
     }
 
-    fn handle_keys<'a, T, W: Write, M: KeyMap<'a, W, T>>(mut keymap: M,
-                                                         mut handler: &mut EventHandler<W>)
-                                                         -> io::Result<String>
-        where String: From<M>
+    fn handle_keys<'a, T, W: Write, M: KeyMap<'a, W, T>>(
+        mut keymap: M,
+        mut handler: &mut EventHandler<W>,
+    ) -> io::Result<String>
+    where
+        String: From<M>,
     {
         let stdin = stdin();
         for c in stdin.keys() {

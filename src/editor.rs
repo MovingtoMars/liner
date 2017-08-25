@@ -1,6 +1,6 @@
 use std::cmp;
 use std::io::{self, Write};
-use termion::{self, clear, cursor, color};
+use termion::{self, clear, color, cursor};
 
 use Context;
 use Buffer;
@@ -105,12 +105,21 @@ macro_rules! cur_buf {
 }
 
 impl<'a, W: Write> Editor<'a, W> {
-    pub fn new(out: W, prompt: String, context: &'a mut Context) -> io::Result<Self> {
+    pub fn new<P: Into<String>>(out: W, prompt: P, context: &'a mut Context) -> io::Result<Self> {
+        Editor::new_with_init_buffer(out, prompt, context, Buffer::new())
+    }
+
+    pub fn new_with_init_buffer<P: Into<String>, B: Into<Buffer>>(
+        out: W,
+        prompt: P,
+        context: &'a mut Context,
+        buffer: B,
+    ) -> io::Result<Self> {
         let mut ed = Editor {
-            prompt: prompt,
+            prompt: prompt.into(),
             cursor: 0,
             out: out,
-            new_buf: Buffer::new(),
+            new_buf: buffer.into(),
             cur_history_loc: None,
             context: context,
             show_completions_hint: false,
@@ -266,12 +275,12 @@ impl<'a, W: Write> Editor<'a, W> {
             try!(self.delete_word_before_cursor(false));
             self.insert_str_after_cursor(completions[0].as_ref())
         } else {
-            let common_prefix =
-                util::find_longest_common_prefix(&completions
-                                                      .iter()
-                                                      .map(|x| x.chars().collect())
-                                                      .collect::<Vec<Vec<char>>>()
-                                                      [..]);
+            let common_prefix = util::find_longest_common_prefix(
+                &completions
+                    .iter()
+                    .map(|x| x.chars().collect())
+                    .collect::<Vec<Vec<char>>>()[..],
+            );
 
             if let Some(p) = common_prefix {
                 let s = p.iter().cloned().collect::<String>();
@@ -300,21 +309,17 @@ impl<'a, W: Write> Editor<'a, W> {
         let (words, pos) = self.get_words_and_cursor_position();
         match pos {
             CursorPosition::InWord(i) => Some(words[i]),
-            CursorPosition::InSpace(Some(i), _) => {
-                if ignore_space_before_cursor {
-                    Some(words[i])
-                } else {
-                    None
-                }
-            }
+            CursorPosition::InSpace(Some(i), _) => if ignore_space_before_cursor {
+                Some(words[i])
+            } else {
+                None
+            },
             CursorPosition::InSpace(None, _) => None,
-            CursorPosition::OnWordLeftEdge(i) => {
-                if ignore_space_before_cursor && i > 0 {
-                    Some(words[i - 1])
-                } else {
-                    None
-                }
-            }
+            CursorPosition::OnWordLeftEdge(i) => if ignore_space_before_cursor && i > 0 {
+                Some(words[i - 1])
+            } else {
+                None
+            },
             CursorPosition::OnWordRightEdge(i) => Some(words[i]),
         }
     }
@@ -324,9 +329,10 @@ impl<'a, W: Write> Editor<'a, W> {
     /// this method ignores that space until it finds a word.
     /// If `ignore_space_before_cursor` is false and there is space directly before the cursor,
     /// nothing is deleted.
-    pub fn delete_word_before_cursor(&mut self,
-                                     ignore_space_before_cursor: bool)
-                                     -> io::Result<()> {
+    pub fn delete_word_before_cursor(
+        &mut self,
+        ignore_space_before_cursor: bool,
+    ) -> io::Result<()> {
         if let Some((start, _)) = self.get_word_before_cursor(ignore_space_before_cursor) {
             let moved = cur_buf_mut!(self).remove(start, self.cursor);
             self.cursor -= moved;
@@ -463,8 +469,10 @@ impl<'a, W: Write> Editor<'a, W> {
     pub fn delete_until(&mut self, position: usize) -> io::Result<()> {
         {
             let buf = cur_buf_mut!(self);
-            buf.remove(cmp::min(self.cursor, position),
-                       cmp::max(self.cursor, position));
+            buf.remove(
+                cmp::min(self.cursor, position),
+                cmp::max(self.cursor, position),
+            );
             self.cursor = cmp::min(self.cursor, position);
         }
         self.display()
@@ -474,8 +482,10 @@ impl<'a, W: Write> Editor<'a, W> {
     pub fn delete_until_inclusive(&mut self, position: usize) -> io::Result<()> {
         {
             let buf = cur_buf_mut!(self);
-            buf.remove(cmp::min(self.cursor, position),
-                       cmp::max(self.cursor + 1, position + 1));
+            buf.remove(
+                cmp::min(self.cursor, position),
+                cmp::max(self.cursor + 1, position + 1),
+            );
             self.cursor = cmp::min(self.cursor, position);
         }
         self.display()
@@ -645,7 +655,11 @@ impl<'a, W: Write> Editor<'a, W> {
 
         // Move the term cursor to the same line as the prompt.
         if self.term_cursor_line > 1 {
-            try!(write!(self.out, "{}", cursor::Up(self.term_cursor_line as u16 - 1)));
+            try!(write!(
+                self.out,
+                "{}",
+                cursor::Up(self.term_cursor_line as u16 - 1)
+            ));
         }
         // Move the cursor to the start of the line then clear everything after. Write the prompt
         try!(write!(self.out, "\r{}{}", clear::AfterCursor, self.prompt));
@@ -658,7 +672,7 @@ impl<'a, W: Write> Editor<'a, W> {
             match self.current_autosuggestion() {
                 Some(suggestion) => suggestion.lines(),
                 None => buf.lines(),
-            } 
+            }
         } else {
             buf.lines()
         };
@@ -708,12 +722,16 @@ impl<'a, W: Write> Editor<'a, W> {
 
         // Now that we are on the right line, we must move the term cursor left or right
         // to match the true cursor.
-        let cursor_col_diff = new_total_width as isize - new_total_width_to_cursor as isize
-                              - cursor_line_diff * w as isize;
+        let cursor_col_diff = new_total_width as isize - new_total_width_to_cursor as isize -
+            cursor_line_diff * w as isize;
         if cursor_col_diff > 0 {
             try!(write!(self.out, "{}", cursor::Left(cursor_col_diff as u16)));
         } else if cursor_col_diff < 0 {
-            try!(write!(self.out, "{}", cursor::Right((-cursor_col_diff) as u16)));
+            try!(write!(
+                self.out,
+                "{}",
+                cursor::Right((-cursor_col_diff) as u16)
+            ));
         }
 
         self.out.flush()
@@ -728,10 +746,9 @@ impl<'a, W: Write> Editor<'a, W> {
 impl<'a, W: Write> From<Editor<'a, W>> for String {
     fn from(ed: Editor<'a, W>) -> String {
         match ed.cur_history_loc {
-                Some(i) => ed.context.history[i].clone(),
-                _ => ed.new_buf,
-            }
-            .into()
+            Some(i) => ed.context.history[i].clone(),
+            _ => ed.new_buf,
+        }.into()
     }
 }
 
