@@ -129,6 +129,10 @@ impl<'a, W: Write> Editor<'a, W> {
             no_eol: false,
         };
 
+        if !ed.new_buf.is_empty() {
+            ed.move_cursor_to_end_of_line()?;
+        }
+
         try!(ed.display());
         Ok(ed)
     }
