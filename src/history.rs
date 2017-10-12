@@ -1,9 +1,10 @@
 use super::*;
 
-use std::collections::VecDeque;
+use std::collections::{vec_deque, VecDeque};
 use std::io::{BufReader, BufRead, Error, ErrorKind};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::iter::IntoIterator;
 use std::ops::Index;
 use std::ops::IndexMut;
 use std::sync::Arc;
@@ -177,6 +178,19 @@ impl History {
             }
         }
         Ok(())
+    }
+
+    fn buffers_ref(&self) -> &VecDeque<Buffer> {
+        &self.buffers
+    }
+}
+
+impl<'a> IntoIterator for &'a History {
+    type Item = &'a Buffer;
+    type IntoIter = vec_deque::Iter<'a, Buffer>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.buffers_ref().into_iter()
     }
 }
 
