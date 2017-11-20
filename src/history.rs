@@ -1,7 +1,7 @@
 use super::*;
 
 use std::collections::{vec_deque, VecDeque};
-use std::io::{BufReader, BufRead, Error, ErrorKind};
+use std::io::{BufRead, BufReader, Error, ErrorKind};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::iter::IntoIterator;
@@ -96,16 +96,14 @@ impl History {
     /// size has been met. If writing to the disk is enabled, this function will be used for
     /// logging history to the designated history file.
     pub fn push(&mut self, new_item: Buffer) -> io::Result<()> {
-        self.file_name
-            .as_ref()
-            .map(|name| {
-                let _ = self.sender.send((new_item.clone(), name.to_owned()));
-            });
+        self.file_name.as_ref().map(|name| {
+            let _ = self.sender.send((new_item.clone(), name.to_owned()));
+        });
 
         // buffers[0] is the oldest entry
         // the new entry goes to the end
-        if !self.append_duplicate_entries &&
-            self.buffers.back().map(|b| b.to_string()) == Some(new_item.to_string())
+        if !self.append_duplicate_entries
+            && self.buffers.back().map(|b| b.to_string()) == Some(new_item.to_string())
         {
             return Ok(());
         }
@@ -212,66 +210,112 @@ impl IndexMut<usize> for History {
 /// This function is not part of the public interface.
 /// XXX: include more information in the file (like fish does)
 fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io::Result<()> {
-    let ret = match OpenOptions::new()
+    let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
-        .open(file_name) {
-        Ok(mut file) => {
-            // The metadata contains the length of the file
-            let file_length = file.metadata().ok().map_or(0u64, |m| m.len());
-            // 4K byte buffer for reading chunks of the file at once.
-            let mut buffer = [0; 4096];
+        .open(file_name)?;
 
-            // Determine the number of commands stored.
-            {
-                let mut seek_point = 0u64;
-                let mut stored = 0;
-                let mut total_read = 0u64;
-                let mut rfile = File::open(file_name).unwrap();
-                loop {
-                    // Read 4K of bytes all at once into the buffer.
-                    let read = rfile.read(&mut buffer)?;
-                    // If EOF is found, don't seek at all.
-                    if read == 0 { break }
-                    // Count the number of commands that were found in the current buffer.
-                    let cmds_read = count(&buffer[0..read], b'\n');
-                    // If stored + read >= max file size, a seek point is in the current buffer.
-                    if stored + cmds_read >= max_file_size {
-                        for &byte in buffer[0..read].iter() {
-                            total_read += 1;
-                            if byte == b'\n' {
-                                stored += 1;
-                                if stored == max_file_size {
-                                    seek_point = total_read;
-                                    break
-                                }
-                            }
-                        }
+    // The metadata contains the length of the file
+    let file_length = file.metadata().ok().map_or(0u64, |m| m.len());
 
-                        try!(file.seek(SeekFrom::Start(seek_point as u64)));
-                        let mut buffer: Vec<u8> = Vec::with_capacity((file_length - seek_point) as usize);
-                        try!(file.read_to_end(&mut buffer));
-                        try!(file.set_len(0));
-                        try!(io::copy(&mut buffer.as_slice(), &mut file));
-                        break
-                    } else {
-                        total_read += read as u64;
-                        stored += cmds_read;
-                    }
-                }
-            };
+    {
+        // Count number of entries in file
+        let mut num_stored = 0;
 
-            // Seek to end for appending
-            try!(file.seek(SeekFrom::End(0)));
-            // Write the command to the history file.
-            try!(file.write_all(String::from(new_item.clone()).as_bytes()));
-            try!(file.write_all(b"\n"));
-            file.flush()?;
+        // 4K byte buffer for reading chunks of the file at once.
+        let mut buffer = [0; 4096];
 
-            Ok(())
+        // Find the total number of commands in the file
+        loop {
+            // Read 4K of bytes all at once into the buffer.
+            let read = file.read(&mut buffer)?;
+            // If EOF is found, don't seek at all.
+            if read == 0 {
+                break;
+            }
+            // Count the number of commands that were found in the current buffer.
+            let cmds_read = count(&buffer[0..read], b'\n');
+            num_stored += cmds_read;
         }
-        Err(message) => Err(message),
+
+        // Find how many bytes we need to move backwards
+        // in the file to remove all the old commands.
+        if num_stored >= max_file_size {
+            let mut total_read = 0u64;
+            let mut move_dist = 0u64;
+            file.seek(SeekFrom::Start(0))?;
+
+            let mut eread = 0;
+            loop {
+                // Read 4K of bytes all at once into the buffer.
+                let read = file.read(&mut buffer)?;
+                // If EOF is found, don't seek at all.
+                if read == 0 {
+                    break;
+                }
+                // Count the number of commands that were found in the current buffer
+                let cmds_read = count(&buffer[0..read], b'\n');
+
+                if eread + cmds_read >= num_stored - max_file_size {
+                    for &byte in buffer[0..read].iter() {
+                        total_read += 1;
+                        if byte == b'\n' {
+                            if eread == num_stored - max_file_size {
+                                move_dist = total_read;
+                                break;
+                            }
+                            eread += 1;
+                        }
+                    }
+                    break;
+                } else {
+                    total_read += read as u64;
+                    eread += cmds_read;
+                }
+            }
+
+
+            // Move it all back
+            move_file_contents_backward(&mut file, move_dist);
+        }
     };
-    ret
+
+
+    // Seek to end for appending
+    try!(file.seek(SeekFrom::End(0)));
+    // Write the command to the history file.
+    try!(file.write_all(String::from(new_item.clone()).as_bytes()));
+    try!(file.write_all(b"\n"));
+    file.flush()?;
+
+    Ok(())
+}
+
+fn move_file_contents_backward(file: &mut File, distance: u64) -> io::Result<()> {
+    let mut total_read = 0;
+    let mut buffer = [0u8, 4096];
+
+    file.seek(SeekFrom::Start(distance))?;
+    
+    loop {
+        // Read 4K of bytes all at once into the buffer.
+        let read = file.read(&mut buffer)?;
+        total_read += read as u64;
+        // If EOF is found, don't seek at all.
+        if read == 0 {
+            break;
+        }
+
+        file.seek(SeekFrom::Current(-(read as i64 + distance as i64)));
+
+
+        file.write_all(&buffer[..read])?;
+        file.seek(SeekFrom::Current(distance as i64));
+    }
+
+    file.set_len(total_read)?;
+    file.flush()?;
+
+    Ok(())
 }
