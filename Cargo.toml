@@ -20,6 +20,6 @@ name = "liner_test"
 path = "src/main.rs"
 
 [dependencies]
-bytecount = "0.1"
+bytecount = "0.3.1"
 termion = "1.4.0"
 unicode-width = "0.1.*"
