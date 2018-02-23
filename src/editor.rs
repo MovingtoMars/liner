@@ -572,7 +572,7 @@ impl<'a, W: Write> Editor<'a, W> {
         if self.show_autosuggestions {
             {
                 let autosuggestion = self.current_autosuggestion().cloned();
-                let mut buf = self.current_buffer_mut();
+                let buf = self.current_buffer_mut();
                 if let Some(x) = autosuggestion {
                     buf.insert_from_buffer(&x);
                 }
