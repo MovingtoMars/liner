@@ -70,7 +70,7 @@ impl Context {
     pub fn read_line<P: Into<String>>(
         &mut self,
         prompt: P,
-        mut handler: &mut EventHandler<RawTerminal<Stdout>>,
+        handler: &mut EventHandler<RawTerminal<Stdout>>,
     ) -> io::Result<String> {
         self.read_line_with_init_buffer(prompt, handler, Buffer::new())
     }
@@ -88,12 +88,12 @@ impl Context {
     pub fn read_line_with_init_buffer<P: Into<String>, B: Into<Buffer>>(
         &mut self,
         prompt: P,
-        mut handler: &mut EventHandler<RawTerminal<Stdout>>,
+        handler: &mut EventHandler<RawTerminal<Stdout>>,
         buffer: B,
     ) -> io::Result<String> {
         let res = {
-            let stdout = stdout().into_raw_mode().unwrap();
-            let ed = try!(Editor::new_with_init_buffer(stdout, prompt, self, buffer));
+            let stdout = stdout().into_raw_mode()?;
+            let ed = Editor::new_with_init_buffer(stdout, prompt, self, buffer)?;
             match self.key_bindings {
                 KeyBindings::Emacs => Self::handle_keys(keymap::Emacs::new(ed), handler),
                 KeyBindings::Vi => Self::handle_keys(keymap::Vi::new(ed), handler),
@@ -106,7 +106,7 @@ impl Context {
 
     fn handle_keys<'a, T, W: Write, M: KeyMap<'a, W, T>>(
         mut keymap: M,
-        mut handler: &mut EventHandler<W>,
+        handler: &mut EventHandler<W>,
     ) -> io::Result<String>
     where
         String: From<M>,
