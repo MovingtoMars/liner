@@ -289,7 +289,7 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
 
 fn move_file_contents_backward(file: &mut File, distance: u64) -> io::Result<()> {
     let mut total_read = 0;
-    let mut buffer = [0u8, 4096];
+    let mut buffer = [0u8; 4096];
 
     file.seek(SeekFrom::Start(distance))?;
     
