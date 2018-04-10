@@ -88,21 +88,21 @@ pub struct Editor<'a, W: Write> {
 }
 
 macro_rules! cur_buf_mut {
-    ($s:expr) => {
+    ($s: expr) => {
         match $s.cur_history_loc {
             Some(i) => &mut $s.context.history[i],
             _ => &mut $s.new_buf,
         }
-    }
+    };
 }
 
 macro_rules! cur_buf {
-    ($s:expr) => {
+    ($s: expr) => {
         match $s.cur_history_loc {
             Some(i) => &$s.context.history[i],
             _ => &$s.new_buf,
         }
-    }
+    };
 }
 
 impl<'a, W: Write> Editor<'a, W> {
@@ -727,8 +727,8 @@ impl<'a, W: Write> Editor<'a, W> {
 
         // Now that we are on the right line, we must move the term cursor left or right
         // to match the true cursor.
-        let cursor_col_diff = new_total_width as isize - new_total_width_to_cursor as isize -
-            cursor_line_diff * w as isize;
+        let cursor_col_diff = new_total_width as isize - new_total_width_to_cursor as isize
+            - cursor_line_diff * w as isize;
         if cursor_col_diff > 0 {
             try!(write!(self.out, "{}", cursor::Left(cursor_col_diff as u16)));
         } else if cursor_col_diff < 0 {

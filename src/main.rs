@@ -22,8 +22,7 @@ fn main() {
     }
 
     loop {
-        let res = con.read_line("[prompt]$ ",
-                                &mut |Event { editor, kind }| {
+        let res = con.read_line("[prompt]$ ", &mut |Event { editor, kind }| {
             if let EventKind::BeforeComplete = kind {
                 let (_, pos) = editor.get_words_and_cursor_position();
 
@@ -83,11 +82,10 @@ fn main() {
                         // are written before exiting.
                         con.history.commit_history();
                         panic!("error: {:?}", e)
-                    },
+                    }
                 }
             }
         }
-
     }
 
     // Ensure that all writes to the history file are written before exiting.
