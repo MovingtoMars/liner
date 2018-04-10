@@ -222,7 +222,7 @@ impl<'a, W: Write> Editor<'a, W> {
 
         // XXX wide character support
         let max_word_size = completions.iter().fold(1, |m, x| max(m, x.chars().count()));
-        let cols = max(1, (w as usize / (max_word_size)));
+        let cols = max(1, w as usize / max_word_size);
         let col_width = 2 + w as usize / cols;
         let cols = max(1, w as usize / col_width);
 
@@ -572,7 +572,7 @@ impl<'a, W: Write> Editor<'a, W> {
         if self.show_autosuggestions {
             {
                 let autosuggestion = self.current_autosuggestion().cloned();
-                let mut buf = self.current_buffer_mut();
+                let buf = self.current_buffer_mut();
                 if let Some(x) = autosuggestion {
                     buf.insert_from_buffer(&x);
                 }

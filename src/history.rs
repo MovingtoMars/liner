@@ -215,10 +215,6 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
         .write(true)
         .create(true)
         .open(file_name)?;
-
-    // The metadata contains the length of the file
-    let file_length = file.metadata().ok().map_or(0u64, |m| m.len());
-
     {
         // Count number of entries in file
         let mut num_stored = 0;
