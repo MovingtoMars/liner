@@ -215,10 +215,6 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
         .write(true)
         .create(true)
         .open(file_name)?;
-
-    // The metadata contains the length of the file
-    let file_length = file.metadata().ok().map_or(0u64, |m| m.len());
-
     {
         // Count number of entries in file
         let mut num_stored = 0;
@@ -275,12 +271,10 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
                 }
             }
 
-
             // Move it all back
-            move_file_contents_backward(&mut file, move_dist);
+            try!(move_file_contents_backward(&mut file, move_dist))
         }
     };
-
 
     // Seek to end for appending
     try!(file.seek(SeekFrom::End(0)));
@@ -294,10 +288,10 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
 
 fn move_file_contents_backward(file: &mut File, distance: u64) -> io::Result<()> {
     let mut total_read = 0;
-    let mut buffer = [0u8, 4096];
+    let mut buffer = [0u8; 4096];
 
     file.seek(SeekFrom::Start(distance))?;
-    
+
     loop {
         // Read 4K of bytes all at once into the buffer.
         let read = file.read(&mut buffer)?;
@@ -307,11 +301,10 @@ fn move_file_contents_backward(file: &mut File, distance: u64) -> io::Result<()>
             break;
         }
 
-        file.seek(SeekFrom::Current(-(read as i64 + distance as i64)));
-
+        file.seek(SeekFrom::Current(-(read as i64 + distance as i64)))?;
 
         file.write_all(&buffer[..read])?;
-        file.seek(SeekFrom::Current(distance as i64));
+        file.seek(SeekFrom::Current(distance as i64))?;
     }
 
     file.set_len(total_read)?;

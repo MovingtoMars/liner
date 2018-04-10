@@ -1,4 +1,4 @@
-use std::io::{self, Write, ErrorKind};
+use std::io::{self, ErrorKind, Write};
 use termion::event::Key;
 use Editor;
 use event::*;
@@ -37,8 +37,10 @@ pub trait KeyMap<'a, W: Write, T>: From<T> {
             Key::Ctrl('f') if self.editor().is_currently_showing_autosuggestion() => {
                 try!(self.editor_mut().accept_autosuggestion());
             }
-            Key::Right if self.editor().is_currently_showing_autosuggestion() &&
-                          self.editor().cursor_is_at_end_of_line() => {
+            Key::Right
+                if self.editor().is_currently_showing_autosuggestion()
+                    && self.editor().cursor_is_at_end_of_line() =>
+            {
                 try!(self.editor_mut().accept_autosuggestion());
             }
             _ => {
@@ -74,9 +76,7 @@ mod tests {
 
     impl<'a, W: Write> TestKeyMap<'a, W> {
         pub fn new(ed: Editor<'a, W>) -> Self {
-            TestKeyMap {
-                ed: ed,
-            }
+            TestKeyMap { ed: ed }
         }
     }
 
@@ -85,11 +85,11 @@ mod tests {
             Ok(())
         }
 
-        fn editor_mut(&mut self) ->  &mut Editor<'a, W> {
+        fn editor_mut(&mut self) -> &mut Editor<'a, W> {
             &mut self.ed
         }
 
-        fn editor(&self) ->  &Editor<'a, W> {
+        fn editor(&self) -> &Editor<'a, W> {
             &self.ed
         }
     }

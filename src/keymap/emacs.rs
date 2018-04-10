@@ -19,7 +19,10 @@ pub struct Emacs<'a, W: Write> {
 
 impl<'a, W: Write> Emacs<'a, W> {
     pub fn new(ed: Editor<'a, W>) -> Self {
-        Emacs { ed, last_arg_fetch_index: None }
+        Emacs {
+            ed,
+            last_arg_fetch_index: None,
+        }
     }
 
     fn handle_ctrl_key(&mut self, c: char) -> io::Result<()> {
@@ -68,7 +71,9 @@ impl<'a, W: Write> Emacs<'a, W> {
         let history_index = match self.last_arg_fetch_index {
             Some(0) => return Ok(()),
             Some(x) => x - 1,
-            None => self.ed.current_history_location().unwrap_or(self.ed.context().history.len() - 1),
+            None => self.ed
+                .current_history_location()
+                .unwrap_or(self.ed.context().history.len() - 1),
         };
 
         // If did a last arg fetch just before this, we need to delete it so it can be replaced by
@@ -96,7 +101,7 @@ impl<'a, W: Write> Emacs<'a, W> {
 impl<'a, W: Write> KeyMap<'a, W, Emacs<'a, W>> for Emacs<'a, W> {
     fn handle_key_core(&mut self, key: Key) -> io::Result<()> {
         match key {
-            Key::Alt('.') => {},
+            Key::Alt('.') => {}
             _ => self.last_arg_fetch_index = None,
         }
 
@@ -117,11 +122,11 @@ impl<'a, W: Write> KeyMap<'a, W, Emacs<'a, W>> for Emacs<'a, W> {
         }
     }
 
-    fn editor_mut(&mut self) ->  &mut Editor<'a, W> {
+    fn editor_mut(&mut self) -> &mut Editor<'a, W> {
         &mut self.ed
     }
 
-    fn editor(&self) ->  &Editor<'a, W> {
+    fn editor(&self) -> &Editor<'a, W> {
         &self.ed
     }
 }
@@ -142,26 +147,22 @@ fn emacs_move_word<W: Write>(ed: &mut Editor<W>, direction: EmacsMoveDir) -> io:
     let (words, pos) = ed.get_words_and_cursor_position();
 
     let word_index = match pos {
-        CursorPosition::InWord(i) => {
-            Some(i)
-        },
+        CursorPosition::InWord(i) => Some(i),
         CursorPosition::OnWordLeftEdge(mut i) => {
             if i > 0 && direction == EmacsMoveDir::Left {
                 i -= 1;
             }
             Some(i)
-        },
+        }
         CursorPosition::OnWordRightEdge(mut i) => {
             if i < words.len() - 1 && direction == EmacsMoveDir::Right {
                 i += 1;
             }
             Some(i)
-        },
-        CursorPosition::InSpace(left, right) => {
-            match direction {
-                EmacsMoveDir::Left => left,
-                EmacsMoveDir::Right => right,
-            }
+        }
+        CursorPosition::InSpace(left, right) => match direction {
+            EmacsMoveDir::Left => left,
+            EmacsMoveDir::Right => right,
         },
     };
 
@@ -190,13 +191,14 @@ mod tests {
     use std::io::Write;
 
     macro_rules! simulate_keys {
-        ($keymap:ident, $keys:expr) => {{
+        ($keymap: ident, $keys: expr) => {{
             simulate_keys(&mut $keymap, $keys.into_iter())
-        }}
+        }};
     }
 
     fn simulate_keys<'a, 'b, W: Write, T, M: KeyMap<'a, W, T>, I>(keymap: &mut M, keys: I) -> bool
-        where I: Iterator<Item = &'b Key>
+    where
+        I: Iterator<Item = &'b Key>,
     {
         for k in keys {
             if keymap.handle_key(*k, &mut |_| {}).unwrap() {
@@ -243,7 +245,9 @@ mod tests {
         let out = Vec::new();
         let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
         let mut map = Emacs::new(ed);
-        map.editor_mut().insert_str_after_cursor("abc def ghi").unwrap();
+        map.editor_mut()
+            .insert_str_after_cursor("abc def ghi")
+            .unwrap();
         assert_eq!(map.ed.cursor(), 11);
 
         simulate_keys!(map, [Key::Alt('b')]);

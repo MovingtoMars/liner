@@ -10,7 +10,9 @@ pub struct BasicCompleter {
 
 impl BasicCompleter {
     pub fn new<T: Into<String>>(prefixes: Vec<T>) -> BasicCompleter {
-        BasicCompleter { prefixes: prefixes.into_iter().map(|s| s.into()).collect() }
+        BasicCompleter {
+            prefixes: prefixes.into_iter().map(|s| s.into()).collect(),
+        }
     }
 }
 
@@ -30,7 +32,9 @@ pub struct FilenameCompleter {
 
 impl FilenameCompleter {
     pub fn new<T: Into<PathBuf>>(working_dir: Option<T>) -> Self {
-        FilenameCompleter { working_dir: working_dir.map(|p| p.into()) }
+        FilenameCompleter {
+            working_dir: working_dir.map(|p| p.into()),
+        }
     }
 }
 
@@ -65,8 +69,9 @@ impl Completer for FilenameCompleter {
         let completing_dir;
         match full_path.parent() {
             // XXX non-unix separaor
-            Some(parent) if start != "" && !start_owned.ends_with("/") &&
-                            !full_path.ends_with("..") => {
+            Some(parent)
+                if start != "" && !start_owned.ends_with("/") && !full_path.ends_with("..") =>
+            {
                 p = PathBuf::from(parent);
                 start_name = full_path
                     .file_name()
@@ -81,7 +86,6 @@ impl Completer for FilenameCompleter {
                 completing_dir = start == "" || start.ends_with("/") || full_path.ends_with("..");
             }
         }
-
 
         let read_dir = match p.read_dir() {
             Ok(x) => x,
