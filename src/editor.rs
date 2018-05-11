@@ -136,7 +136,7 @@ impl<'a, 'b, W: Write> Editor<'a, W> {
         if !ed.new_buf.is_empty() {
             ed.move_cursor_to_end_of_line()?;
         }
-        println!("{}", (ed.closure)("dodo"));
+        
         try!(ed.display());
         Ok(ed)
     }
