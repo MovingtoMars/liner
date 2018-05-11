@@ -74,7 +74,7 @@ impl Context {
         mut handler: &mut EventHandler<RawTerminal<Stdout>>,
     ) -> io::Result<String> 
     where for<'r> F: (Fn(&'r str,) -> String) {
-        self.read_line_with_init_buffer(prompt, handler, Box::new(f), Buffer::new())
+        self.read_line_with_init_buffer(prompt, handler, f, Buffer::new())
     }
 
     /// Same as `Context.read_line()`, but passes the provided initial buffer to the editor.
@@ -85,16 +85,17 @@ impl Context {
     /// let line =
     ///     context.read_line_with_init_buffer("[prompt]$ ",
     ///                                        &mut |_| {},
-    ///                                        Box::new(|s| {s.to_string()}),
+    ///                                        |s| {String::from(s)},
     ///                                        "some initial buffer");
     /// ```
-    pub fn read_line_with_init_buffer<P: Into<String>, B: Into<Buffer>>(
+    pub fn read_line_with_init_buffer<P: Into<String>, B: Into<Buffer>, F: 'static>(
         &mut self,
         prompt: P,
         mut handler: &mut EventHandler<RawTerminal<Stdout>>,
-        f: Box<Fn(&str) -> String>,
+        f: F,
         buffer: B,
-    ) -> io::Result<String> {
+    ) -> io::Result<String> 
+    where for<'r> F: Fn(&'r str) -> String + 'static {
         let res = {
             let stdout = stdout().into_raw_mode().unwrap();
             let ed = try!(Editor::new_with_init_buffer(stdout, prompt, f, self, buffer));

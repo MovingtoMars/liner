@@ -211,7 +211,7 @@ mod tests {
     fn enter_is_done() {
         let mut context = Context::new();
         let out = Vec::new();
-        let ed = Editor::new(out, "prompt".to_owned(), |s| {s.to_string()}, &mut context).unwrap();
+        let ed = Editor::new(out, "prompt".to_owned(), |s| {String::from(s)}, &mut context).unwrap();
         let mut map = Emacs::new(ed);
         map.ed.insert_str_after_cursor("done").unwrap();
         assert_eq!(map.ed.cursor(), 4);
@@ -226,7 +226,7 @@ mod tests {
     fn move_cursor_left() {
         let mut context = Context::new();
         let out = Vec::new();
-        let ed = Editor::new(out, "prompt".to_owned(), |s| {s.to_string()}, &mut context).unwrap();
+        let ed = Editor::new(out, "prompt".to_owned(), |s| {String::from(s)}, &mut context).unwrap();
         let mut map = Emacs::new(ed);
         map.editor_mut().insert_str_after_cursor("let").unwrap();
         assert_eq!(map.ed.cursor(), 3);
@@ -241,7 +241,7 @@ mod tests {
     fn move_word() {
         let mut context = Context::new();
         let out = Vec::new();
-        let ed = Editor::new(out, "prompt".to_owned(), |s| {s.to_string()}, &mut context).unwrap();
+        let ed = Editor::new(out, "prompt".to_owned(), |s| {String::from(s)}, &mut context).unwrap();
         let mut map = Emacs::new(ed);
         map.editor_mut().insert_str_after_cursor("abc def ghi").unwrap();
         assert_eq!(map.ed.cursor(), 11);
@@ -261,7 +261,7 @@ mod tests {
     fn cursor_movement() {
         let mut context = Context::new();
         let out = Vec::new();
-        let ed = Editor::new(out, "prompt".to_owned(), |s| {s.to_string()}, &mut context).unwrap();
+        let ed = Editor::new(out, "prompt".to_owned(), |s| {String::from(s)}, &mut context).unwrap();
         let mut map = Emacs::new(ed);
         map.ed.insert_str_after_cursor("right").unwrap();
         assert_eq!(map.ed.cursor(), 5);
@@ -276,7 +276,7 @@ mod tests {
     fn ctrl_h() {
         let mut context = Context::new();
         let out = Vec::new();
-        let ed = Editor::new(out, "prompt".to_owned(), |s| {s.to_string()}, &mut context).unwrap();
+        let ed = Editor::new(out, "prompt".to_owned(), |s| {String::from(s)}, &mut context).unwrap();
         let mut map = Emacs::new(ed);
         map.ed.insert_str_after_cursor("not empty").unwrap();
 
