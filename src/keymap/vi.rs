@@ -460,6 +460,7 @@ impl<'a, W: Write> Vi<'a, W> {
         if self.last_insert.is_some() {
             // leave insert mode
             try!(self.handle_key_core(Key::Esc));
+            try!(self.handle_key_core(Key::Ctrl('[')));
         }
 
         // restore the last command
@@ -486,7 +487,7 @@ impl<'a, W: Write> Vi<'a, W> {
 
     fn handle_key_insert(&mut self, key: Key) -> io::Result<()> {
         match key {
-            Key::Esc => {
+            Key::Esc | Key::Ctrl('[') => {
                 // perform any repeats
                 if self.count > 0 {
                     self.last_count = self.count;
@@ -1194,6 +1195,32 @@ mod tests {
             Esc,
             Char('i'),
             Esc,
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+    }
+
+    #[test]
+    /// Cursor moves left when exiting insert mode.
+    fn vi_switch_from_insert_ctrl_lb() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("data").unwrap();
+        assert_eq!(map.ed.cursor(), 4);
+
+        simulate_keys!(map, [Ctrl('[')]);
+        assert_eq!(map.ed.cursor(), 3);
+
+        simulate_keys!(map, [
+            Char('i'),
+            Ctrl('['),
+            Char('i'),
+            Ctrl('['),
+            Char('i'),
+            Ctrl('['),
+            Char('i'),
+            Ctrl('['),
         ]);
         assert_eq!(map.ed.cursor(), 0);
     }
