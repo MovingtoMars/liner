@@ -1264,6 +1264,26 @@ mod tests {
         assert_eq!(map.ed.cursor(), 0);
         assert_eq!(String::from(map), "ta");
     }
+    #[test]
+    fn vi_normal_delete_ctrl_lb() {
+        let mut context = Context::new();
+        context.history.push("history".into()).unwrap();
+        context.history.push("history".into()).unwrap();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("data").unwrap();
+        assert_eq!(map.ed.cursor(), 4);
+
+        simulate_keys!(map, [
+            Ctrl('['),
+            Char('0'),
+            Delete,
+            Char('x'),
+        ]);
+        assert_eq!(map.ed.cursor(), 0);
+        assert_eq!(String::from(map), "ta");
+    }
 
     #[test]
     fn vi_substitute_command() {
