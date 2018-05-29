@@ -76,8 +76,8 @@ pub struct Editor<'a, W: Write> {
     // If the cursor is on the line below the prompt, `term_cursor_line == 2`.
     term_cursor_line: usize,
 
-    // If this is true, on the next tab we print the completion list.
-    show_completions_hint: bool,
+    // The next completion to suggest, or none
+    show_completions_hint: Option<(Vec<String>, usize)>,
 
     // Show autosuggestions based on history
     show_autosuggestions: bool,
@@ -123,7 +123,7 @@ impl<'a, W: Write> Editor<'a, W> {
             new_buf: buffer.into(),
             cur_history_loc: None,
             context: context,
-            show_completions_hint: false,
+            show_completions_hint: None,
             show_autosuggestions: true,
             term_cursor_line: 1,
             no_eol: false,
@@ -163,6 +163,11 @@ impl<'a, W: Write> Editor<'a, W> {
 
     // XXX: Returning a bool to indicate doneness is a bit awkward, maybe change it
     pub fn handle_newline(&mut self) -> io::Result<bool> {
+        if self.show_completions_hint.is_some() {
+            self.show_completions_hint = None;
+            return Ok(false);
+        }
+
         let char_before_cursor = cur_buf!(self).char_before(self.cursor);
         if char_before_cursor == Some('\\') {
             // self.insert_after_cursor('\r')?;
@@ -172,7 +177,7 @@ impl<'a, W: Write> Editor<'a, W> {
             self.cursor = cur_buf!(self).num_chars();
             self._display(false)?;
             try!(self.out.write(b"\r\n"));
-            self.show_completions_hint = false;
+            self.show_completions_hint = None;
             Ok(true)
         }
     }
@@ -246,11 +251,20 @@ impl<'a, W: Write> Editor<'a, W> {
     }
 
     pub fn skip_completions_hint(&mut self) {
-        self.show_completions_hint = false;
+        self.show_completions_hint = None;
     }
 
     pub fn complete(&mut self, handler: &mut EventHandler<W>) -> io::Result<()> {
         handler(Event::new(self, EventKind::BeforeComplete));
+
+        if let Some((completions, i)) = self.show_completions_hint.take() {
+            try!(self.delete_word_before_cursor(false));
+            let ret = self.insert_str_after_cursor(&completions[i]);
+
+            let i = (i+1) % completions.len();
+            self.show_completions_hint = Some((completions, i));
+            return ret;
+        }
 
         let (word, completions) = {
             let word_range = self.get_word_before_cursor(false);
@@ -273,10 +287,10 @@ impl<'a, W: Write> Editor<'a, W> {
 
         if completions.len() == 0 {
             // Do nothing.
-            self.show_completions_hint = false;
+            self.show_completions_hint = None;
             Ok(())
         } else if completions.len() == 1 {
-            self.show_completions_hint = false;
+            self.show_completions_hint = None;
             try!(self.delete_word_before_cursor(false));
             self.insert_str_after_cursor(completions[0].as_ref())
         } else {
@@ -296,16 +310,12 @@ impl<'a, W: Write> Editor<'a, W> {
                 }
             }
 
-            if self.show_completions_hint {
-                try!(write!(self.out, "\r\n"));
-                try!(self.print_completion_list(&completions[..]));
-                try!(write!(self.out, "\r\n"));
-                try!(self.display());
+            try!(write!(self.out, "\r\n"));
+            try!(self.print_completion_list(&completions[..]));
+            try!(write!(self.out, "\r\n"));
+            try!(self.display());
 
-                self.show_completions_hint = false;
-            } else {
-                self.show_completions_hint = true;
-            }
+            self.show_completions_hint = Some((completions, 0));
             Ok(())
         }
     }
