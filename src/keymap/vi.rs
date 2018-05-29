@@ -460,7 +460,6 @@ impl<'a, W: Write> Vi<'a, W> {
         if self.last_insert.is_some() {
             // leave insert mode
             try!(self.handle_key_core(Key::Esc));
-            try!(self.handle_key_core(Key::Ctrl('[')));
         }
 
         // restore the last command
@@ -1190,41 +1189,15 @@ mod tests {
             Char('i'),
             Esc,
             Char('i'),
-            Esc,
-            Char('i'),
-            Esc,
-            Char('i'),
-            Esc,
-        ]);
-        assert_eq!(map.ed.cursor(), 0);
-    }
-
-    #[test]
-    /// Cursor moves left when exiting insert mode.
-    fn vi_switch_from_insert_ctrl_lb() {
-        let mut context = Context::new();
-        let out = Vec::new();
-        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
-        let mut map = Vi::new(ed);
-        map.ed.insert_str_after_cursor("data").unwrap();
-        assert_eq!(map.ed.cursor(), 4);
-
-        simulate_keys!(map, [Ctrl('[')]);
-        assert_eq!(map.ed.cursor(), 3);
-
-        simulate_keys!(map, [
-            Char('i'),
+            //Ctrl+[ is the same as escape
             Ctrl('['),
             Char('i'),
-            Ctrl('['),
-            Char('i'),
-            Ctrl('['),
+            Esc,
             Char('i'),
             Ctrl('['),
         ]);
         assert_eq!(map.ed.cursor(), 0);
     }
-
     #[test]
     fn vi_normal_history_cursor_eol() {
         let mut context = Context::new();
@@ -1240,7 +1213,7 @@ mod tests {
         assert_eq!(map.ed.cursor(), 7);
 
         // in normal mode, make sure we don't end up past the last char
-        simulate_keys!(map, [Esc, Up]);
+        simulate_keys!(map, [Ctrl('['), Up]);
         assert_eq!(map.ed.cursor(), 6);
     }
 
@@ -1265,27 +1238,6 @@ mod tests {
         assert_eq!(String::from(map), "ta");
     }
     #[test]
-    fn vi_normal_delete_ctrl_lb() {
-        let mut context = Context::new();
-        context.history.push("history".into()).unwrap();
-        context.history.push("history".into()).unwrap();
-        let out = Vec::new();
-        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
-        let mut map = Vi::new(ed);
-        map.ed.insert_str_after_cursor("data").unwrap();
-        assert_eq!(map.ed.cursor(), 4);
-
-        simulate_keys!(map, [
-            Ctrl('['),
-            Char('0'),
-            Delete,
-            Char('x'),
-        ]);
-        assert_eq!(map.ed.cursor(), 0);
-        assert_eq!(String::from(map), "ta");
-    }
-
-    #[test]
     fn vi_substitute_command() {
         let mut context = Context::new();
         let out = Vec::new();
@@ -1295,7 +1247,8 @@ mod tests {
         assert_eq!(map.ed.cursor(), 4);
 
         simulate_keys!(map, [
-            Esc,
+            //ctrl+[ is the same as Esc
+            Ctrl('['),
             Char('0'),
             Char('s'),
             Char('s'),
@@ -1338,7 +1291,8 @@ mod tests {
             Char('s'),
             Char('b'),
             Char('e'),
-            Esc,
+            //The same as Esc
+            Ctrl('['),
             Char('4'),
             Char('l'),
             Char('.'),
@@ -1461,7 +1415,8 @@ mod tests {
         let mut map = Vi::new(ed);
 
         simulate_keys!(map, [
-            Esc,
+            //same as Esc
+            Ctrl('['),
             Char('3'),
             Char('i'),
             Char('t'),
