@@ -486,7 +486,7 @@ impl<'a, W: Write> Vi<'a, W> {
 
     fn handle_key_insert(&mut self, key: Key) -> io::Result<()> {
         match key {
-            Key::Esc => {
+            Key::Esc | Key::Ctrl('[') => {
                 // perform any repeats
                 if self.count > 0 {
                     self.last_count = self.count;
@@ -908,6 +908,11 @@ impl<'a, W: Write> Vi<'a, W> {
             (_, ReverseRepeat, Some((c, RightUntil))) => (Key::Char(c), LeftUntil),
             (_, ReverseRepeat, Some((c, LeftAt))) => (Key::Char(c), RightAt),
             (_, ReverseRepeat, Some((c, RightAt))) => (Key::Char(c), LeftAt),
+            // repeat with no last_char_movement, invalid
+            (_, Repeat, None) | (_, ReverseRepeat, None) => {
+                self.normal_mode_abort();
+                return Ok(());
+            }
             // pass valid keys through as is
             (Key::Char(c), _, _) => {
                 // store last command info
@@ -915,8 +920,7 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.current_command.push(key);
                 (key, movement)
             }
-            // all other combinations are invalid, abort. This includes repeats with no
-            // last_char_movement stored, and non char key presses.
+            // all other combinations are invalid, abort
             _ => {
                 self.normal_mode_abort();
                 return Ok(());
@@ -1189,15 +1193,15 @@ mod tests {
             Char('i'),
             Esc,
             Char('i'),
-            Esc,
+            //Ctrl+[ is the same as escape
+            Ctrl('['),
             Char('i'),
             Esc,
             Char('i'),
-            Esc,
+            Ctrl('['),
         ]);
         assert_eq!(map.ed.cursor(), 0);
     }
-
     #[test]
     fn vi_normal_history_cursor_eol() {
         let mut context = Context::new();
@@ -1213,7 +1217,7 @@ mod tests {
         assert_eq!(map.ed.cursor(), 7);
 
         // in normal mode, make sure we don't end up past the last char
-        simulate_keys!(map, [Esc, Up]);
+        simulate_keys!(map, [Ctrl('['), Up]);
         assert_eq!(map.ed.cursor(), 6);
     }
 
@@ -1237,7 +1241,6 @@ mod tests {
         assert_eq!(map.ed.cursor(), 0);
         assert_eq!(String::from(map), "ta");
     }
-
     #[test]
     fn vi_substitute_command() {
         let mut context = Context::new();
@@ -1248,7 +1251,8 @@ mod tests {
         assert_eq!(map.ed.cursor(), 4);
 
         simulate_keys!(map, [
-            Esc,
+            //ctrl+[ is the same as Esc
+            Ctrl('['),
             Char('0'),
             Char('s'),
             Char('s'),
@@ -1291,7 +1295,8 @@ mod tests {
             Char('s'),
             Char('b'),
             Char('e'),
-            Esc,
+            //The same as Esc
+            Ctrl('['),
             Char('4'),
             Char('l'),
             Char('.'),
@@ -1414,7 +1419,8 @@ mod tests {
         let mut map = Vi::new(ed);
 
         simulate_keys!(map, [
-            Esc,
+            //same as Esc
+            Ctrl('['),
             Char('3'),
             Char('i'),
             Char('t'),
@@ -3713,5 +3719,22 @@ mod tests {
         let res = map.handle_key(Ctrl('h'), &mut |_| {});
         assert_eq!(res.is_ok(), true);
         assert_eq!(map.ed.current_buffer().to_string(), "not empt".to_string());
+    }
+
+    #[test]
+    /// repeat char move with no last char
+    fn repeat_char_move_no_char() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc defg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('$'),
+            Char(';'),
+        ]);
+        assert_eq!(map.ed.cursor(), 7);
     }
 }

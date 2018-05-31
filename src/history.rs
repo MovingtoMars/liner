@@ -277,7 +277,7 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
 
 
             // Move it all back
-            move_file_contents_backward(&mut file, move_dist);
+            move_file_contents_backward(&mut file, move_dist)?;
         }
     };
 
@@ -294,7 +294,7 @@ fn write_to_disk(max_file_size: usize, new_item: &Buffer, file_name: &str) -> io
 
 fn move_file_contents_backward(file: &mut File, distance: u64) -> io::Result<()> {
     let mut total_read = 0;
-    let mut buffer = [0u8, 4096];
+    let mut buffer = [0u8; 4096];
 
     file.seek(SeekFrom::Start(distance))?;
     
@@ -307,11 +307,11 @@ fn move_file_contents_backward(file: &mut File, distance: u64) -> io::Result<()>
             break;
         }
 
-        file.seek(SeekFrom::Current(-(read as i64 + distance as i64)));
+        file.seek(SeekFrom::Current(-(read as i64 + distance as i64)))?;
 
 
         file.write_all(&buffer[..read])?;
-        file.seek(SeekFrom::Current(distance as i64));
+        file.seek(SeekFrom::Current(distance as i64))?;
     }
 
     file.set_len(total_read)?;
