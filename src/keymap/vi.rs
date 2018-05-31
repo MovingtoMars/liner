@@ -908,6 +908,11 @@ impl<'a, W: Write> Vi<'a, W> {
             (_, ReverseRepeat, Some((c, RightUntil))) => (Key::Char(c), LeftUntil),
             (_, ReverseRepeat, Some((c, LeftAt))) => (Key::Char(c), RightAt),
             (_, ReverseRepeat, Some((c, RightAt))) => (Key::Char(c), LeftAt),
+            // repeat with no last_char_movement, invalid
+            (_, Repeat, None) | (_, ReverseRepeat, None) => {
+                self.normal_mode_abort();
+                return Ok(());
+            }
             // pass valid keys through as is
             (Key::Char(c), _, _) => {
                 // store last command info
@@ -915,8 +920,7 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.current_command.push(key);
                 (key, movement)
             }
-            // all other combinations are invalid, abort. This includes repeats with no
-            // last_char_movement stored, and non char key presses.
+            // all other combinations are invalid, abort
             _ => {
                 self.normal_mode_abort();
                 return Ok(());
@@ -3713,5 +3717,22 @@ mod tests {
         let res = map.handle_key(Ctrl('h'), &mut |_| {});
         assert_eq!(res.is_ok(), true);
         assert_eq!(map.ed.current_buffer().to_string(), "not empt".to_string());
+    }
+
+    #[test]
+    /// repeat char move with no last char
+    fn repeat_char_move_no_char() {
+        let mut context = Context::new();
+        let out = Vec::new();
+        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let mut map = Vi::new(ed);
+        map.ed.insert_str_after_cursor("abc defg").unwrap();
+
+        simulate_keys!(map, [
+            Esc,
+            Char('$'),
+            Char(';'),
+        ]);
+        assert_eq!(map.ed.cursor(), 7);
     }
 }
