@@ -1,4 +1,5 @@
 use std::io::{self, stdin, stdout, Stdout, Write};
+use std::borrow::Cow;
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 
@@ -67,12 +68,14 @@ impl Context {
     /// The output is stdout.
     /// The returned line has the newline removed.
     /// Before returning, will revert all changes to the history buffers.
-    pub fn read_line<P: Into<String>>(
+    pub fn read_line<'a, P: Into<String>, F: 'static>(
         &mut self,
         prompt: P,
+        f: F,
         mut handler: &mut EventHandler<RawTerminal<Stdout>>,
-    ) -> io::Result<String> {
-        self.read_line_with_init_buffer(prompt, handler, Buffer::new())
+    ) -> io::Result<String> 
+    where F: Fn(&'a str) -> Cow<'a, str> {
+        self.read_line_with_init_buffer(prompt, handler, f, Buffer::new())
     }
 
     /// Same as `Context.read_line()`, but passes the provided initial buffer to the editor.
@@ -83,17 +86,20 @@ impl Context {
     /// let line =
     ///     context.read_line_with_init_buffer("[prompt]$ ",
     ///                                        &mut |_| {},
+    ///                                        |s| {String::from(s)},
     ///                                        "some initial buffer");
     /// ```
-    pub fn read_line_with_init_buffer<P: Into<String>, B: Into<Buffer>>(
+    pub fn read_line_with_init_buffer<'a, P: Into<String>, B: Into<Buffer>, F: 'static>(
         &mut self,
         prompt: P,
         mut handler: &mut EventHandler<RawTerminal<Stdout>>,
+        f: F,
         buffer: B,
-    ) -> io::Result<String> {
+    ) -> io::Result<String> 
+    where F: Fn(&'a str) -> Cow<'a, str> {
         let res = {
             let stdout = stdout().into_raw_mode().unwrap();
-            let ed = try!(Editor::new_with_init_buffer(stdout, prompt, self, buffer));
+            let ed = try!(Editor::new_with_init_buffer(stdout, prompt, f, self, buffer));
             match self.key_bindings {
                 KeyBindings::Emacs => Self::handle_keys(keymap::Emacs::new(ed), handler),
                 KeyBindings::Vi => Self::handle_keys(keymap::Vi::new(ed), handler),

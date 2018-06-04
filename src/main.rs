@@ -1,13 +1,23 @@
 extern crate liner;
 extern crate termion;
+extern crate regex;
 
 use std::mem::replace;
+use std::borrow::Cow;
 use std::env::{args, current_dir};
 use std::io;
 
 use liner::{Context, CursorPosition, Event, EventKind, FilenameCompleter};
+use termion::color;
+use regex::Regex;
 
-fn main() {
+fn highlight_dodo(s: &'static str) -> Cow<'a, str> {
+    let reg_exp = Regex::new("(?P<k>dodo)").unwrap();
+    let format = format!("{}$k{}", color::Fg(color::Red), color::Fg(color::Reset));
+    reg_exp.replace_all(s, format.as_str()).into()
+}
+
+fn main<'a>() {
     let mut con = Context::new();
 
     let history_file = args().nth(1);
@@ -21,8 +31,11 @@ fn main() {
         con.history.load_history().unwrap();
     }
 
+    let h = |s: &str| highlight_dodo(s);
+
     loop {
         let res = con.read_line("[prompt]$ ",
+                                highlight_dodo,
                                 &mut |Event { editor, kind }| {
             if let EventKind::BeforeComplete = kind {
                 let (_, pos) = editor.get_words_and_cursor_position();

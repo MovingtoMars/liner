@@ -99,7 +99,7 @@ mod tests {
     fn ctrl_d_empty() {
         let mut context = Context::new();
         let out = Vec::new();
-        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let ed = Editor::new(out, "prompt".to_owned(), |s| {String::from(s)}, &mut context).unwrap();
         let mut map = TestKeyMap::new(ed);
 
         let res = map.handle_key(Ctrl('d'), &mut |_| {});
@@ -112,7 +112,7 @@ mod tests {
     fn ctrl_d_non_empty() {
         let mut context = Context::new();
         let out = Vec::new();
-        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let ed = Editor::new(out, "prompt".to_owned(), |s| {String::from(s)}, &mut context).unwrap();
         let mut map = TestKeyMap::new(ed);
         map.ed.insert_str_after_cursor("not empty").unwrap();
 
@@ -125,7 +125,7 @@ mod tests {
     fn ctrl_c() {
         let mut context = Context::new();
         let out = Vec::new();
-        let ed = Editor::new(out, "prompt".to_owned(), &mut context).unwrap();
+        let ed = Editor::new(out, "prompt".to_owned(), |s| {String::from(s)}, &mut context).unwrap();
         let mut map = TestKeyMap::new(ed);
 
         let res = map.handle_key(Ctrl('c'), &mut |_| {});
