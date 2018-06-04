@@ -1,4 +1,5 @@
 use std::io::{self, stdin, stdout, Stdout, Write};
+use std::borrow::Cow;
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 
@@ -67,13 +68,13 @@ impl Context {
     /// The output is stdout.
     /// The returned line has the newline removed.
     /// Before returning, will revert all changes to the history buffers.
-    pub fn read_line<P: Into<String>, F: 'static>(
+    pub fn read_line<'a, P: Into<String>, F: 'static>(
         &mut self,
         prompt: P,
         f: F,
         mut handler: &mut EventHandler<RawTerminal<Stdout>>,
     ) -> io::Result<String> 
-    where for<'r> F: (Fn(&'r str,) -> String) {
+    where F: Fn(&'a str) -> Cow<'a, str> {
         self.read_line_with_init_buffer(prompt, handler, f, Buffer::new())
     }
 
@@ -88,14 +89,14 @@ impl Context {
     ///                                        |s| {String::from(s)},
     ///                                        "some initial buffer");
     /// ```
-    pub fn read_line_with_init_buffer<P: Into<String>, B: Into<Buffer>, F: 'static>(
+    pub fn read_line_with_init_buffer<'a, P: Into<String>, B: Into<Buffer>, F: 'static>(
         &mut self,
         prompt: P,
         mut handler: &mut EventHandler<RawTerminal<Stdout>>,
         f: F,
         buffer: B,
     ) -> io::Result<String> 
-    where for<'r> F: Fn(&'r str) -> String + 'static {
+    where F: Fn(&'a str) -> Cow<'a, str> {
         let res = {
             let stdout = stdout().into_raw_mode().unwrap();
             let ed = try!(Editor::new_with_init_buffer(stdout, prompt, f, self, buffer));

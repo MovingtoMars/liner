@@ -1,5 +1,6 @@
 use std::cmp;
 use std::io::{self, Write};
+use std::borrow::Cow;
 use termion::{self, clear, color, cursor};
 
 use Context;
@@ -59,7 +60,10 @@ pub struct Editor<'a, W: Write> {
     prompt: String,
     out: W,
     context: &'a mut Context,
-    closure: Box<Fn(&str) -> String>,
+
+    // A closure that is evaluated just before we write to out.
+    // This allows us to do custom syntax highlighting.
+    closure: Box<Fn(&'a str) -> Cow<'a, str>>,
 
     // The location of the cursor. Note that the cursor does not lie on a char, but between chars.
     // So, if `cursor == 0` then the cursor is before the first char,
@@ -106,25 +110,31 @@ macro_rules! cur_buf {
     }
 }
 
-impl<'a, 'b, W: Write> Editor<'a, W> {
-    pub fn new<P: Into<String>, F: 'static>(out: W, prompt: P, f: F, context: &'a mut Context) -> io::Result<Self>
-    where for<'r> F: Fn(&'r str) -> String + 'static {
+impl<'a, W: Write> Editor<'a, W> {
+    //pub fn echo<>
+    pub fn new<P: Into<String>, F>(
+        out: W, 
+        prompt: P, 
+        f: F, 
+        context: &'a mut Context
+    ) -> io::Result<Self>
+    where F: Fn(&'a str) -> Cow<'a, str> {
         Editor::new_with_init_buffer(out, prompt, f, context, Buffer::new())
     }
 
-    pub fn new_with_init_buffer<P: Into<String>, B: Into<Buffer>, F: 'static>(
+    pub fn new_with_init_buffer<P: Into<String>, B: Into<Buffer>, F>(
         out: W,
         prompt: P,
         f: F,
         context: &'a mut Context,
         buffer: B,
     ) -> io::Result<Self> 
-    where for<'r> F: Fn(&'r str) -> String + 'static {
+    where F: Into<Fn(&'a str) -> Cow<'a, str>> {
         let mut ed = Editor {
             prompt: prompt.into(),
             cursor: 0,
             out: out,
-            closure: Box::new(f),
+            closure: Box::new(f.into()),
             new_buf: buffer.into(),
             cur_history_loc: None,
             context: context,
@@ -771,7 +781,7 @@ mod tests {
     fn delete_all_after_cursor_undo() {
         let mut context = Context::new();
         let out = Vec::new();
-        let mut ed = Editor::new(out, "prompt".to_owned(), |s| {String::from(s)}, &mut context).unwrap();
+        let mut ed = Editor::new(out, "prompt".to_owned(), |s| {s.into()}, &mut context).unwrap();
         ed.insert_str_after_cursor("delete all of this").unwrap();
         ed.move_cursor_to_start_of_line().unwrap();
         ed.delete_all_after_cursor().unwrap();
@@ -782,8 +792,9 @@ mod tests {
     #[test]
     fn move_cursor_left() {
         let mut context = Context::new();
+        let closure = |s: &str| {String::from(s)};
         let out = Vec::new();
-        let mut ed = Editor::new(out, "prompt".to_owned(), |s| {String::from(s)}, &mut context).unwrap();
+        let mut ed = Editor::new(out, "prompt".to_owned(), closure, &mut context).unwrap();
         ed.insert_str_after_cursor("let").unwrap();
         assert_eq!(ed.cursor, 3);
 
