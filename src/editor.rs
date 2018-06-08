@@ -675,7 +675,7 @@ impl<'a, W: Write> Editor<'a, W> {
         let new_total_width = calc_width(prompt_width, buf_widths, w);
         let new_total_width_to_cursor = calc_width(prompt_width, buf_widths_to_cursor, w);
 
-        let mut new_num_lines = (new_total_width + w) / w;
+        let new_num_lines = (new_total_width + w) / w;
 
         // Move the term cursor to the same line as the prompt.
         if self.term_cursor_line > 1 {
@@ -691,7 +691,7 @@ impl<'a, W: Write> Editor<'a, W> {
         // If we're cycling through completions, show those
         let mut completion_lines = 0;
         if let Some((completions, i)) = self.show_completions_hint.as_ref() {
-            completion_lines = 2 + try!(Self::print_completion_list(&mut self.out, completions, *i));
+            completion_lines = 1 + try!(Self::print_completion_list(&mut self.out, completions, *i));
             try!(write!(self.out, "\r\n"));
         }
 
@@ -768,7 +768,8 @@ impl<'a, W: Write> Editor<'a, W> {
             ));
         }
 
-        self.term_cursor_line = completion_lines;
+        self.term_cursor_line += completion_lines;
+
         self.out.flush()
     }
 
