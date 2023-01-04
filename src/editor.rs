@@ -133,7 +133,7 @@ impl<'a, W: Write> Editor<'a, W> {
             ed.move_cursor_to_end_of_line()?;
         }
 
-        try!(ed.display());
+        ed.display()?;
         Ok(ed)
     }
 
@@ -171,7 +171,7 @@ impl<'a, W: Write> Editor<'a, W> {
         } else {
             self.cursor = cur_buf!(self).num_chars();
             self._display(false)?;
-            try!(self.out.write(b"\r\n"));
+            self.out.write(b"\r\n")?;
             self.show_completions_hint = false;
             Ok(true)
         }
@@ -218,24 +218,24 @@ impl<'a, W: Write> Editor<'a, W> {
     fn print_completion_list(&mut self, completions: &[String]) -> io::Result<()> {
         use std::cmp::max;
 
-        let (w, _) = try!(termion::terminal_size());
+        let (w, _) = termion::terminal_size()?;
 
         // XXX wide character support
         let max_word_size = completions.iter().fold(1, |m, x| max(m, x.chars().count()));
-        let cols = max(1, (w as usize / (max_word_size)));
+        let cols = max(1, w as usize / (max_word_size));
         let col_width = 2 + w as usize / cols;
         let cols = max(1, w as usize / col_width);
 
         let mut i = 0;
         for com in completions {
             if i == cols {
-                try!(write!(self.out, "\r\n"));
+                write!(self.out, "\r\n")?;
                 i = 0;
             } else if i > cols {
                 unreachable!()
             }
 
-            try!(write!(self.out, "{:<1$}", com, col_width));
+            write!(self.out, "{:<1$}", com, col_width)?;
 
             i += 1;
         }
@@ -277,7 +277,7 @@ impl<'a, W: Write> Editor<'a, W> {
             Ok(())
         } else if completions.len() == 1 {
             self.show_completions_hint = false;
-            try!(self.delete_word_before_cursor(false));
+            self.delete_word_before_cursor(false)?;
             self.insert_str_after_cursor(completions[0].as_ref())
         } else {
             let common_prefix = util::find_longest_common_prefix(
@@ -291,16 +291,16 @@ impl<'a, W: Write> Editor<'a, W> {
                 let s = p.iter().cloned().collect::<String>();
 
                 if s.len() > word.len() && s.starts_with(&word[..]) {
-                    try!(self.delete_word_before_cursor(false));
+                    self.delete_word_before_cursor(false)?;
                     return self.insert_str_after_cursor(s.as_ref());
                 }
             }
 
             if self.show_completions_hint {
-                try!(write!(self.out, "\r\n"));
-                try!(self.print_completion_list(&completions[..]));
-                try!(write!(self.out, "\r\n"));
-                try!(self.display());
+                write!(self.out, "\r\n")?;
+                self.print_completion_list(&completions[..])?;
+                write!(self.out, "\r\n")?;
+                self.display()?;
 
                 self.show_completions_hint = false;
             } else {
@@ -347,7 +347,7 @@ impl<'a, W: Write> Editor<'a, W> {
 
     /// Clears the screen then prints the prompt and current buffer.
     pub fn clear(&mut self) -> io::Result<()> {
-        try!(write!(self.out, "{}{}", clear::All, cursor::Goto(1, 1)));
+        write!(self.out, "{}{}", clear::All, cursor::Goto(1, 1))?;
         self.term_cursor_line = 1;
         self.display()
     }
@@ -572,7 +572,7 @@ impl<'a, W: Write> Editor<'a, W> {
         if self.show_autosuggestions {
             {
                 let autosuggestion = self.current_autosuggestion().cloned();
-                let mut buf = self.current_buffer_mut();
+                let buf = self.current_buffer_mut();
                 if let Some(x) = autosuggestion {
                     buf.insert_from_buffer(&x);
                 }
@@ -615,7 +615,7 @@ impl<'a, W: Write> Editor<'a, W> {
             if cfg!(test) { (80, 24) }
             // otherwise pull values from termion
             else {
-                let (mut size_col, mut size_row) = try!(termion::terminal_size());
+                let (mut size_col, mut size_row) = termion::terminal_size()?;
                 if size_col == 0 {
                     size_col = 80;
                     size_row = 24;
@@ -660,14 +660,14 @@ impl<'a, W: Write> Editor<'a, W> {
 
         // Move the term cursor to the same line as the prompt.
         if self.term_cursor_line > 1 {
-            try!(write!(
+            write!(
                 self.out,
                 "{}",
                 cursor::Up(self.term_cursor_line as u16 - 1)
-            ));
+            )?;
         }
         // Move the cursor to the start of the line then clear everything after. Write the prompt
-        try!(write!(self.out, "\r{}{}", clear::AfterCursor, self.prompt));
+        write!(self.out, "\r{}{}", clear::AfterCursor, self.prompt)?;
 
         // If we have an autosuggestion, we make the autosuggestion the buffer we print out.
         // We get the number of bytes in the buffer (but NOT the autosuggestion).
@@ -685,7 +685,7 @@ impl<'a, W: Write> Editor<'a, W> {
 
         for (i, line) in lines.iter().enumerate() {
             if i > 0 {
-                try!(write!(self.out, "{}", cursor::Right(prompt_width as u16)));
+                write!(self.out, "{}", cursor::Right(prompt_width as u16))?;
             }
 
             if buf_num_remaining_bytes == 0 {
@@ -711,7 +711,7 @@ impl<'a, W: Write> Editor<'a, W> {
 
         // at the end of the line, move the cursor down a line
         if new_total_width % w == 0 {
-            try!(write!(self.out, "\r\n"));
+            write!(self.out, "\r\n")?;
         }
 
         self.term_cursor_line = (new_total_width_to_cursor + w) / w;
@@ -720,7 +720,7 @@ impl<'a, W: Write> Editor<'a, W> {
         // to the line where the true cursor is.
         let cursor_line_diff = new_num_lines as isize - self.term_cursor_line as isize;
         if cursor_line_diff > 0 {
-            try!(write!(self.out, "{}", cursor::Up(cursor_line_diff as u16)));
+            write!(self.out, "{}", cursor::Up(cursor_line_diff as u16))?;
         } else if cursor_line_diff < 0 {
             unreachable!();
         }
@@ -730,13 +730,13 @@ impl<'a, W: Write> Editor<'a, W> {
         let cursor_col_diff = new_total_width as isize - new_total_width_to_cursor as isize -
             cursor_line_diff * w as isize;
         if cursor_col_diff > 0 {
-            try!(write!(self.out, "{}", cursor::Left(cursor_col_diff as u16)));
+            write!(self.out, "{}", cursor::Left(cursor_col_diff as u16))?;
         } else if cursor_col_diff < 0 {
-            try!(write!(
+            write!(
                 self.out,
                 "{}",
                 cursor::Right((-cursor_col_diff) as u16)
-            ));
+            )?;
         }
 
         self.out.flush()

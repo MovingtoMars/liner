@@ -66,7 +66,7 @@ pub fn remove_codes(input: &str) -> Cow<str> {
                     _ => s = AnsiState::Norm,
                 },
                 AnsiState::Csi => match c {
-                    'A' ... 'Z' | 'a' ... 'z' => s = AnsiState::Norm,
+                    'A' ..= 'Z' | 'a' ..= 'z' => s = AnsiState::Norm,
                     _ => (),
                 },
                 AnsiState::Osc => match c {

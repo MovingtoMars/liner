@@ -36,7 +36,7 @@ impl<'a, W: Write> Emacs<'a, W> {
             'k' => self.ed.delete_all_after_cursor(),
             'w' => self.ed.delete_word_before_cursor(true),
             'x' => {
-                try!(self.ed.undo());
+                self.ed.undo()?;
                 Ok(())
             }
             _ => Ok(()),
@@ -51,7 +51,7 @@ impl<'a, W: Write> Emacs<'a, W> {
             'f' => emacs_move_word(&mut self.ed, EmacsMoveDir::Right),
             'b' => emacs_move_word(&mut self.ed, EmacsMoveDir::Left),
             'r' => {
-                try!(self.ed.revert());
+                self.ed.revert()?;
                 Ok(())
             }
             '.' => self.handle_last_arg_fetch(),
@@ -191,7 +191,7 @@ mod tests {
 
     macro_rules! simulate_keys {
         ($keymap:ident, $keys:expr) => {{
-            simulate_keys(&mut $keymap, $keys.into_iter())
+            simulate_keys(&mut $keymap, $keys.iter())
         }}
     }
 

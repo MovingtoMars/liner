@@ -1,7 +1,6 @@
 extern crate liner;
 extern crate termion;
 
-use std::mem::replace;
 use std::env::{args, current_dir};
 use std::io;
 
@@ -38,9 +37,9 @@ fn main() {
 
                 if filename {
                     let completer = FilenameCompleter::new(Some(current_dir().unwrap()));
-                    replace(&mut editor.context().completer, Some(Box::new(completer)));
+                    editor.context().completer = Some(Box::new(completer));
                 } else {
-                    replace(&mut editor.context().completer, None);
+                    editor.context().completer = None;
                 }
             }
         });

@@ -48,8 +48,8 @@ pub enum KeyBindings {
 
 pub struct Context {
     pub history: History,
-    pub completer: Option<Box<Completer>>,
-    pub word_divider_fn: Box<Fn(&Buffer) -> Vec<(usize, usize)>>,
+    pub completer: Option<Box<dyn Completer>>,
+    pub word_divider_fn: Box<dyn Fn(&Buffer) -> Vec<(usize, usize)>>,
     pub key_bindings: KeyBindings,
 }
 
@@ -70,7 +70,7 @@ impl Context {
     pub fn read_line<P: Into<String>>(
         &mut self,
         prompt: P,
-        mut handler: &mut EventHandler<RawTerminal<Stdout>>,
+        handler: &mut EventHandler<RawTerminal<Stdout>>,
     ) -> io::Result<String> {
         self.read_line_with_init_buffer(prompt, handler, Buffer::new())
     }
@@ -88,13 +88,13 @@ impl Context {
     pub fn read_line_with_init_buffer<P: Into<String>, B: Into<Buffer>>(
         &mut self,
         prompt: P,
-        mut handler: &mut EventHandler<RawTerminal<Stdout>>,
+        handler: &mut EventHandler<RawTerminal<Stdout>>,
         buffer: B,
     ) -> io::Result<String> {
         let res = {
             let bindings = self.key_bindings;
             let stdout = stdout().into_raw_mode().unwrap();
-            let ed = try!(Editor::new_with_init_buffer(stdout, prompt, self, buffer));
+            let ed = Editor::new_with_init_buffer(stdout, prompt, self, buffer)?;
             match bindings {
                 KeyBindings::Emacs => Self::handle_keys(keymap::Emacs::new(ed), handler),
                 KeyBindings::Vi => Self::handle_keys(keymap::Vi::new(ed), handler),
@@ -107,14 +107,14 @@ impl Context {
 
     fn handle_keys<'a, T, W: Write, M: KeyMap<'a, W, T>>(
         mut keymap: M,
-        mut handler: &mut EventHandler<W>,
+        handler: &mut EventHandler<W>,
     ) -> io::Result<String>
     where
         String: From<M>,
     {
         let stdin = stdin();
         for c in stdin.keys() {
-            if try!(keymap.handle_key(c.unwrap(), handler)) {
+            if keymap.handle_key(c.unwrap(), handler)? {
                 break;
             }
         }

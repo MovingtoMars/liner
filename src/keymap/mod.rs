@@ -22,34 +22,34 @@ pub trait KeyMap<'a, W: Write, T>: From<T> {
 
         match key {
             Key::Ctrl('c') => {
-                try!(self.editor_mut().handle_newline());
+                self.editor_mut().handle_newline()?;
                 return Err(io::Error::new(ErrorKind::Interrupted, "ctrl-c"));
             }
             // if the current buffer is empty, treat ctrl-d as eof
             Key::Ctrl('d') if is_empty => {
-                try!(self.editor_mut().handle_newline());
+                self.editor_mut().handle_newline()?;
                 return Err(io::Error::new(ErrorKind::UnexpectedEof, "ctrl-d"));
             }
-            Key::Char('\t') => try!(self.editor_mut().complete(handler)),
+            Key::Char('\t') => self.editor_mut().complete(handler)?,
             Key::Char('\n') => {
-                done = try!(self.editor_mut().handle_newline());
+                done = self.editor_mut().handle_newline()?;
             }
             Key::Ctrl('f') if self.editor().is_currently_showing_autosuggestion() => {
-                try!(self.editor_mut().accept_autosuggestion());
+                self.editor_mut().accept_autosuggestion()?;
             }
             Key::Right if self.editor().is_currently_showing_autosuggestion() &&
                           self.editor().cursor_is_at_end_of_line() => {
-                try!(self.editor_mut().accept_autosuggestion());
+                self.editor_mut().accept_autosuggestion()?;
             }
             _ => {
-                try!(self.handle_key_core(key));
+                self.handle_key_core(key)?;
                 self.editor_mut().skip_completions_hint();
             }
         };
 
         handler(Event::new(self.editor_mut(), EventKind::AfterKey(key)));
 
-        try!(self.editor_mut().flush());
+        self.editor_mut().flush()?;
 
         Ok(done)
     }

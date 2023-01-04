@@ -146,7 +146,7 @@ fn vi_move_word<W: Write>(ed: &mut Editor<W>, move_mode: ViMoveMode, direction: 
         Whitespace,
         Keyword,
         NonKeyword,
-    };
+    }
 
     let mut cursor = ed.cursor();
     'repeat: for _ in 0..count {
@@ -214,7 +214,7 @@ fn vi_move_word_end<W: Write>(ed: &mut Editor<W>, move_mode: ViMoveMode, directi
         EndOnWord,
         EndOnOther,
         EndOnWhitespace,
-    };
+    }
 
     let mut cursor = ed.cursor();
     'repeat: for _ in 0..count {
@@ -379,8 +379,8 @@ impl<'a, W: Write> Vi<'a, W> {
             Delete(start_pos) => {
                 // perform the delete operation
                 match move_type {
-                    Exclusive => try!(self.ed.delete_until(start_pos)),
-                    Inclusive => try!(self.ed.delete_until_inclusive(start_pos)),
+                    Exclusive => self.ed.delete_until(start_pos)?,
+                    Inclusive => self.ed.delete_until_inclusive(start_pos)?,
                 }
 
                 // update the last state
@@ -450,20 +450,20 @@ impl<'a, W: Write> Vi<'a, W> {
 
         if let Some(insert_key) = self.last_insert {
             // enter insert mode if necessary
-            try!(self.handle_key_core(insert_key));
+            self.handle_key_core(insert_key)?;
         }
 
         for k in keys.iter() {
-            try!(self.handle_key_core(*k));
+            self.handle_key_core(*k)?;
         }
 
         if self.last_insert.is_some() {
             // leave insert mode
-            try!(self.handle_key_core(Key::Esc));
+            self.handle_key_core(Key::Esc)?;
         }
 
         // restore the last command
-        mem::replace(&mut self.last_command, keys);
+        self.last_command = keys;
 
         Ok(())
     }
@@ -493,13 +493,13 @@ impl<'a, W: Write> Vi<'a, W> {
                     for _ in 1..self.count {
                         let keys = mem::replace(&mut self.last_command, Vec::new());
                         for k in keys.into_iter() {
-                            try!(self.handle_key_core(k));
+                            self.handle_key_core(k)?;
                         }
                     }
                     self.count = 0;
                 }
                 // cursor moves to the left when switching from insert to normal mode
-                try!(self.ed.move_cursor_left(1));
+                self.ed.move_cursor_left(1)?;
                 self.pop_mode();
                 Ok(())
             }
@@ -539,7 +539,7 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.count = 0;
                 self.movement_reset = true;
                 self.ed.current_buffer_mut().end_undo_group();
-                try!(self.ed.move_up());
+                self.ed.move_up()?;
                 self.ed.current_buffer_mut().start_undo_group();
                 Ok(())
             }
@@ -547,7 +547,7 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.count = 0;
                 self.movement_reset = true;
                 self.ed.current_buffer_mut().end_undo_group();
-                try!(self.ed.move_down());
+                self.ed.move_down()?;
                 self.ed.current_buffer_mut().start_undo_group();
                 Ok(())
             }
@@ -589,7 +589,7 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.last_insert = Some(key);
                 self.set_mode(Insert);
                 let pos = self.ed.cursor() + self.move_count_right();
-                try!(self.ed.delete_until(pos));
+                self.ed.delete_until(pos)?;
                 self.last_count = self.count;
                 self.count = 0;
                 Ok(())
@@ -654,20 +654,20 @@ impl<'a, W: Write> Vi<'a, W> {
             }
             Key::Char('h') | Key::Left | Key::Backspace => {
                 let count = self.move_count_left();
-                try!(self.ed.move_cursor_left(count));
+                self.ed.move_cursor_left(count)?;
                 self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('l') | Key::Right | Key::Char(' ') => {
                 let count = self.move_count_right();
-                try!(self.ed.move_cursor_right(count));
+                self.ed.move_cursor_right(count)?;
                 self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('k') | Key::Up =>  {
-                try!(self.ed.move_up());
+                self.ed.move_up()?;
                 self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('j') | Key::Down => {
-                try!(self.ed.move_down());
+                self.ed.move_down()?;
                 self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('t') => {
@@ -690,32 +690,32 @@ impl<'a, W: Write> Vi<'a, W> {
             Key::Char(',') => self.handle_key_move_to_char(key, ReverseRepeat),
             Key::Char('w') => {
                 let count = self.move_count();
-                try!(move_word(&mut self.ed, count));
+                move_word(&mut self.ed, count)?;
                 self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('W') => {
                 let count = self.move_count();
-                try!(move_word_ws(&mut self.ed, count));
+                move_word_ws(&mut self.ed, count)?;
                 self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('e') => {
                 let count = self.move_count();
-                try!(move_to_end_of_word(&mut self.ed, count));
+                move_to_end_of_word(&mut self.ed, count)?;
                 self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('E') => {
                 let count = self.move_count();
-                try!(move_to_end_of_word_ws(&mut self.ed, count));
+                move_to_end_of_word_ws(&mut self.ed, count)?;
                 self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('b') => {
                 let count = self.move_count();
-                try!(move_word_back(&mut self.ed, count));
+                move_word_back(&mut self.ed, count)?;
                 self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('B') => {
                 let count = self.move_count();
-                try!(move_word_ws_back(&mut self.ed, count));
+                move_word_ws_back(&mut self.ed, count)?;
                 self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('g') => {
@@ -724,10 +724,10 @@ impl<'a, W: Write> Vi<'a, W> {
             }
             // if count is 0, 0 should move to start of line
             Key::Char('0') if self.count == 0 => {
-                try!(self.ed.move_cursor_to_start_of_line());
+                self.ed.move_cursor_to_start_of_line()?;
                 self.pop_mode_after_movement(Exclusive)
             }
-            Key::Char(i @ '0'...'9') => {
+            Key::Char(i @ '0'..='9') => {
                 let i = i.to_digit(10).unwrap();
                 // count = count * 10 + i
                 self.count = self.count
@@ -736,7 +736,7 @@ impl<'a, W: Write> Vi<'a, W> {
                 Ok(())
             }
             Key::Char('$') => {
-                try!(self.ed.move_cursor_to_end_of_line());
+                self.ed.move_cursor_to_end_of_line()?;
                 self.pop_mode_after_movement(Exclusive)
             }
             Key::Char('x') | Key::Delete => {
@@ -747,7 +747,7 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.last_count = self.count;
 
                 let pos = self.ed.cursor() + self.move_count_right();
-                try!(self.ed.delete_until(pos));
+                self.ed.delete_until(pos)?;
                 self.count = 0;
                 Ok(())
             }
@@ -762,19 +762,19 @@ impl<'a, W: Write> Vi<'a, W> {
                 for _ in 0..self.move_count_right() {
                     let c = self.ed.current_buffer().char_after(self.ed.cursor()).unwrap();
                     if c.is_lowercase() {
-                        try!(self.ed.delete_after_cursor());
+                        self.ed.delete_after_cursor()?;
                         for c in c.to_uppercase() {
-                            try!(self.ed.insert_after_cursor(c));
+                            self.ed.insert_after_cursor(c)?;
                         }
                     }
                     else if c.is_uppercase() {
-                        try!(self.ed.delete_after_cursor());
+                        self.ed.delete_after_cursor()?;
                         for c in c.to_lowercase() {
-                            try!(self.ed.insert_after_cursor(c));
+                            self.ed.insert_after_cursor(c)?;
                         }
                     }
                     else {
-                        try!(self.ed.move_cursor_right(1));
+                        self.ed.move_cursor_right(1)?;
                     }
                 }
                 self.pop_mode();
@@ -784,7 +784,7 @@ impl<'a, W: Write> Vi<'a, W> {
                 let count = self.move_count();
                 self.count = 0;
                 for _ in 0..count {
-                    let did = try!(self.ed.undo());
+                    let did = self.ed.undo()?;
                     if !did {
                         break;
                     }
@@ -795,7 +795,7 @@ impl<'a, W: Write> Vi<'a, W> {
                 let count = self.move_count();
                 self.count = 0;
                 for _ in 0..count {
-                    let did = try!(self.ed.redo());
+                    let did = self.ed.redo()?;
                     if !did {
                         break;
                     }
@@ -821,12 +821,12 @@ impl<'a, W: Write> Vi<'a, W> {
                     // replace count characters
                     self.ed.current_buffer_mut().start_undo_group();
                     for _ in 0..self.move_count_right() {
-                        try!(self.ed.delete_after_cursor());
-                        try!(self.ed.insert_after_cursor(c));
+                        self.ed.delete_after_cursor()?;
+                        self.ed.insert_after_cursor(c)?;
                     }
                     self.ed.current_buffer_mut().end_undo_group();
 
-                    try!(self.ed.move_cursor_left(1));
+                    self.ed.move_cursor_left(1)?;
                 }
                 self.pop_mode();
             }
@@ -864,7 +864,7 @@ impl<'a, W: Write> Vi<'a, W> {
                 self.handle_key_normal(key)
             }
             // handle numeric keys
-            (Key::Char('0'...'9'), _) => {
+            (Key::Char('0'..='9'), _) => {
                 self.handle_key_normal(key)
             }
             (Key::Char('c'), Some(Key::Char('c'))) | (Key::Char('d'), None) => {
@@ -878,8 +878,8 @@ impl<'a, W: Write> Vi<'a, W> {
                 // delete the whole line
                 self.count = 0;
                 self.secondary_count = 0;
-                try!(self.ed.move_cursor_to_start_of_line());
-                try!(self.ed.delete_all_after_cursor());
+                self.ed.move_cursor_to_start_of_line()?;
+                self.ed.delete_all_after_cursor()?;
 
                 // return to the previous mode
                 self.pop_mode();
@@ -926,7 +926,7 @@ impl<'a, W: Write> Vi<'a, W> {
         match key {
             Key::Char(c) => {
                 let move_type;
-                try!(match movement {
+                match movement {
                     RightUntil => {
                         move_type = Inclusive;
                         match find_char(self.ed.current_buffer(), self.ed.cursor() + 1, c, count) {
@@ -956,7 +956,7 @@ impl<'a, W: Write> Vi<'a, W> {
                         }
                     }
                     Repeat | ReverseRepeat => unreachable!(),
-                });
+                }?;
 
                 // go back to the previous mode
                 self.pop_mode_after_movement(move_type)
@@ -975,11 +975,11 @@ impl<'a, W: Write> Vi<'a, W> {
 
         let res = match key {
             Key::Char('e') => {
-                try!(move_to_end_of_word_back(&mut self.ed, count));
+                move_to_end_of_word_back(&mut self.ed, count)?;
                 self.pop_mode_after_movement(Inclusive)
             }
             Key::Char('E') => {
-                try!(move_to_end_of_word_ws_back(&mut self.ed, count));
+                move_to_end_of_word_ws_back(&mut self.ed, count)?;
                 self.pop_mode_after_movement(Inclusive)
             }
 
@@ -1036,7 +1036,7 @@ mod tests {
 
     macro_rules! simulate_keys {
         ($keymap:ident, $keys:expr) => {{
-            simulate_keys(&mut $keymap, $keys.into_iter())
+            simulate_keys(&mut $keymap, $keys.iter())
         }}
     }
 
