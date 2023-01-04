@@ -92,9 +92,10 @@ impl Context {
         buffer: B,
     ) -> io::Result<String> {
         let res = {
+            let bindings = self.key_bindings;
             let stdout = stdout().into_raw_mode().unwrap();
             let ed = try!(Editor::new_with_init_buffer(stdout, prompt, self, buffer));
-            match self.key_bindings {
+            match bindings {
                 KeyBindings::Emacs => Self::handle_keys(keymap::Emacs::new(ed), handler),
                 KeyBindings::Vi => Self::handle_keys(keymap::Vi::new(ed), handler),
             }
